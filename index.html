@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tetris Liberation</title>
+    <style>
+        * { box-sizing: border-box; touch-action: none; }
+        
+        body { 
+            margin: 0; background: #0a0a0a; color: #fff; 
+            font-family: 'Courier New', monospace; 
+            display: flex; flex-direction: column; 
+            height: 100vh; width: 100vw; overflow: hidden;
+            align-items: center; justify-content: center;
+        }
+
+        h1 { 
+            font-size: clamp(10px, 4vw, 13px); 
+            margin: 2px 0; color: #39FF14; text-align: center; 
+            line-height: 1.1; width: 100%;
+        }
+
+        /* Layout : Gauche | Jeu | Droite */
+        #main-layout {
+            display: grid;
+            grid-template-columns: 80px 1fr 80px;
+            gap: 5px;
+            width: 100%;
+            max-width: 480px;
+            height: 90vh;
+            align-items: center;
+            padding: 0 10px;
+        }
+
+        /* Nouveau HUD au-dessus du jeu */
+        #hud {
+            grid-column: 1 / 4;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(255,255,255,0.05);
+            padding: 5px;
+            border-radius: 8px;
+            border: 1px solid #333;
+            margin-bottom: 5px;
+        }
+
+        #stats-row {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            font-size: 11px;
+            font-weight: bold;
+            color: #eee;
+            margin-bottom: 2px;
+        }
+
+        #msg-header {
+            color: #39FF14; font-size: 15px; font-weight: 900;
+            text-transform: uppercase; height: 18px;
+            opacity: 0;
+            text-shadow: 0 0 8px rgba(57, 255, 20, 0.6);
+            transition: opacity 0.1s;
+        }
+
+        .control-col {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            height: 100%;
+            justify-content: center;
+        }
+
+        #container { 
+            position: relative; 
+            border: 2px solid #444; background: #000;
+            aspect-ratio: 10 / 20;
+            width: 100%;
+        }
+
+        canvas { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+
+        button {
+            width: 100%;
+            background: #222; border: 2px solid #ffffff; color: #ffffff; 
+            font-weight: bold; border-radius: 12px; 
+            font-family: inherit; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .btn-move { height: 70px; font-size: 12px; }
+        .btn-strike { height: 130px; font-size: 12px; background: #1a1a1a; border-color: #39FF14; color: #39FF14; }
+
+        button:active { 
+            background: #39FF14; color: #000; border-color: #fff; 
+            box-shadow: 0 0 15px #39FF14;
+        }
+
+        #victory { 
+            position: absolute; inset: 0; background: rgba(0,0,0,0.95);
+            display: none; flex-direction: column; justify-content: center; align-items: center; z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Tetris Liberation:<br>ERROR 404 KREMLIN NOT FOUND</h1>
+
+    <div id="main-layout">
+        <div id="hud">
+            <div id="stats-row">
+                <span id="lvl-display">MISSION: KREMLIN</span>
+                <span>TARGET HP: <span id="hp">0</span></span>
+            </div>
+            <div id="msg-header">AWAITING ORDERS</div>
+        </div>
+        
+        <div class="control-col">
+            <button id="btn-left" class="btn-move">LEFT</button>
+            <button class="btn-strike dual-strike">HIT</button>
+        </div>
+
+        <div id="container">
+            <canvas id="game"></canvas>
+            <div id="victory">
+                <h2 style="color:#ffd700">Слава Україні!</h2>
+                <button onclick="location.reload()" style="height:40px; width:120px; background:#fff; color:#000;">RESTART</button>
+            </div>
+        </div>
+
+        <div class="control-col">
+            <button id="btn-right" class="btn-move">RIGHT</button>
+            <button class="btn-strike dual-strike">HIT</button>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const msgHeader = document.getElementById('msg-header');
+    const lvlDisplay = document.getElementById('lvl-display');
+    const hpEl = document.getElementById('hp');
+    const ROW = 20, COL = 10, SQ = 25;
+    canvas.width = COL * SQ; canvas.height = ROW * SQ;
+
+    const C_PALE = "#e8e8e8", C_PALE_2 = "#dcdcdc", C_HAIR = "#fdf2a7", C_TEAR = "#a0c4ff", C_BUNKER = "#555";
+    const DRONES_SHAPES = [[[1,0,1],[0,1,0]], [[0,1,0],[1,1,1],[0,1,0]], [[1,1,1]]];
+    
+    // Liste exhaustive des messages demandés
+    const HIT_MESSAGES = [
+        "DIRECT HIT!", "PUTIN PANICS!", "CRITICAL DAMAGE!", "BUNKER BREACH!", 
+        "PUTIN IS FURIOUS!", "SLAVA UKRAINI!", "HEROYAM SLAVA!", "U MAD BRO?",
+        "PUTIN IS CRYING!", "TOTAL PANIC!", "TSAR TANTRUM!", "BUNKER TIME!",
+        "KREMLIN BURNS!", "JUSTICE SERVED!", "BUNKER LEAK!", "HIT!", "BUNKER LEEK!",
+        "TARGET SHOCKED!", "CRITICAL HIT!"
+    ];
+
+    let grid = [], level = 1, hp = 0, emotion = "NORMAL", emotionTimer = 0;
+    let putinX = 4, putinDir = 1, isVictory = false, frames = 0, stars = [];
+    let activeDrone = null;
+
+    const FACE = [
+        "0044444400", "0411111140", "4111111114", "1111111111", 
+        "1122112211", "1111111111", "0111221110", "0111111110", 
+        "0012222100", "0001111000", "0000110000"
+    ];
+
+    function initLevel(n) {
+        level = n;
+        grid = Array.from({length: ROW}, () => Array(COL).fill(0));
+        if (n === 1) {
+            const K = ["0000400000","0003330000","0003330000","0402220400","3332223330","2222222220","2222222222","2222222222"];
+            K.forEach((r, i) => r.split('').forEach((c, j) => { if(c!=='0') grid[12+i][j] = parseInt(c); }));
+            lvlDisplay.innerText = "MISSION: KREMLIN";
+        } else {
+            for(let r=5; r<18; r++) for(let c=0; c<COL; c++) grid[r][c] = 7;
+            hp = 88;
+            lvlDisplay.innerText = "MISSION: BUNKER";
+        }
+        updateHP();
+        activeDrone = new Drone();
+    }
+
+    class Drone {
+        constructor() {
+            this.shape = DRONES_SHAPES[Math.floor(Math.random()*3)];
+            this.x = 4; this.y = -2;
+        }
+        draw() {
+            this.shape.forEach((row, rIdx) => row.forEach((cell, cIdx) => {
+                if(cell) {
+                    ctx.fillStyle = (this.x + cIdx + this.y + rIdx) % 2 === 0 ? "#0057b7" : "#ffd700";
+                    ctx.fillRect((this.x + cIdx)*SQ, (this.y + rIdx)*SQ, SQ, SQ);
+                }
+            }));
+        }
+    }
+
+    function checkCollision(d, ox, oy) {
+        for(let r=0; r<d.shape.length; r++) {
+            for(let c=0; c<d.shape[r].length; c++) {
+                if(!d.shape[r][c]) continue;
+                let nx = d.x + c + ox, ny = d.y + r + oy;
+                if(nx < 0 || nx >= COL || ny >= ROW) return true;
+                if(ny >= 0 && grid[ny][nx] !== 0) return true;
+            }
+        }
+        return false;
+    }
+
+    function explode() {
+        let hitSth = false, hitTgt = false;
+        activeDrone.shape.forEach((row, rIdx) => row.forEach((cell, cIdx) => {
+            if(cell) {
+                for(let dy=-1; dy<=1; dy++) {
+                    for(let dx=-1; dx<=1; dx++) {
+                        let ly = activeDrone.y + rIdx + dy, lx = activeDrone.x + cIdx + dx;
+                        if(ly >= 0 && ly < ROW && lx >= 0 && lx < COL) {
+                            if(level === 2 && ly === 19 && lx === Math.floor(putinX)) hitTgt = true;
+                            if(grid[ly][lx] !== 0) hitSth = true;
+                            grid[ly][lx] = 0;
+                        }
+                    }
+                }
+            }
+        }));
+        if(hitTgt) hp--;
+        if(hitSth || hitTgt) {
+            emotion = ["SHOCK", "ANGER", "CRY"][Math.floor(Math.random()*3)];
+            emotionTimer = 30;
+            msgHeader.innerText = HIT_MESSAGES[Math.floor(Math.random()*HIT_MESSAGES.length)];
+            msgHeader.style.opacity = 1;
+            setTimeout(() => { if(!isVictory) msgHeader.style.opacity = 0; }, 600);
+        }
+        updateHP();
+        if(hp <= 0) {
+            if(level === 1) initLevel(2);
+            else { isVictory = true; document.getElementById('victory').style.display = 'flex'; }
+        }
+    }
+
+    function updateHP() {
+        if(level === 1) {
+            let count = 0; grid.forEach(r => r.forEach(c => { if(c>=2) count++; }));
+            hp = count;
+        }
+        hpEl.innerText = hp;
+    }
+
+    function initStars() {
+        stars = [];
+        for(let i=0; i<30; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, s: Math.random()*2 });
+    }
+
+    function draw() {
+        ctx.fillStyle = "#000"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "#fff"; stars.forEach(s => ctx.fillRect(s.x, s.y, s.s, s.s));
+        
+        FACE.forEach((row, r) => row.split('').forEach((char, c) => {
+            if(char === "0") return;
+            ctx.fillStyle = (char === "4") ? C_HAIR : (char === "2" ? C_PALE_2 : C_PALE);
+            if(emotion === "CRY" && r > 4 && (c === 2 || c === 7)) ctx.fillStyle = C_TEAR;
+            if(emotion === "ANGER" && r === 4) ctx.fillStyle = "#ffaaaa";
+            ctx.fillRect(c*SQ, r*SQ, SQ, SQ);
+        }));
+
+        grid.forEach((row, r) => row.forEach((cell, c) => {
+            if(cell === 0) return;
+            ctx.fillStyle = cell === 7 ? C_BUNKER : (cell === 2 ? "#e3522a" : (cell === 3 ? "#2d5a27" : "#ffd700"));
+            ctx.fillRect(c*SQ, r*SQ, SQ, SQ);
+        }));
+
+        if(level === 2) {
+            ctx.fillStyle = "#111"; ctx.fillRect(0, 19*SQ, canvas.width, SQ);
+            putinX += 0.25 * putinDir; if(putinX >= COL-1 || putinX <= 0) putinDir *= -1;
+            ctx.fillStyle = C_HAIR; ctx.fillRect(putinX*SQ, 19*SQ, SQ, SQ);
+        }
+        activeDrone.draw();
+    }
+
+    function loop() {
+        if(isVictory) return;
+        draw();
+        if(frames % 30 === 0) {
+            if(checkCollision(activeDrone, 0, 1)) { explode(); activeDrone = new Drone(); }
+            else activeDrone.y++;
+        }
+        if(emotionTimer > 0) { emotionTimer--; if(emotionTimer === 0) emotion = "NORMAL"; }
+        frames++; requestAnimationFrame(loop);
+    }
+
+    const triggerStrike = () => {
+        while(!checkCollision(activeDrone, 0, 1)) activeDrone.y++;
+        explode();
+        activeDrone = new Drone();
+    };
+
+    document.getElementById('btn-left').onclick = () => { if(!checkCollision(activeDrone, -1, 0)) activeDrone.x--; };
+    document.getElementById('btn-right').onclick = () => { if(!checkCollision(activeDrone, 1, 0)) activeDrone.x++; };
+    document.querySelectorAll('.dual-strike').forEach(btn => btn.onclick = triggerStrike);
+
+    initStars(); initLevel(1); loop();
+</script>
+</body>
+</html>

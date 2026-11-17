@@ -1,0 +1,2110 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="page-title">Pont de Crimée (Kertch) - Modélisation 3D Interactive</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.78);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .glass-btn {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-btn:hover {
+            background: rgba(56, 189, 248, 0.25);
+            border-color: rgba(56, 189, 248, 0.5);
+            transform: translateY(-1px);
+        }
+        .glass-btn.active {
+            background: rgba(14, 165, 233, 0.45);
+            border-color: #38bdf8;
+            color: #ffffff;
+            font-weight: 600;
+        }
+        .btn-ukraine {
+            background: linear-gradient(135deg, #0057b7 0%, #ffd700 100%);
+            border: 2px solid #ffffff;
+            color: #ffffff;
+            font-weight: 700;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(0, 87, 183, 0.5);
+        }
+        .btn-ukraine:hover {
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 6px 25px rgba(255, 215, 0, 0.7);
+        }
+        .btn-drone {
+            background: linear-gradient(135deg, #0f172a 0%, #334155 100%);
+            border: 2px solid #38bdf8;
+            color: #38bdf8;
+            font-weight: 700;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(56, 189, 248, 0.3);
+        }
+        .btn-drone:hover {
+            background: rgba(56, 189, 248, 0.25);
+            transform: translateY(-2px) scale(1.03);
+            box-shadow: 0 6px 25px rgba(56, 189, 248, 0.5);
+        }
+        .btn-x {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #ffffff;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        .btn-x:hover {
+            background: rgba(29, 161, 242, 0.3);
+            border-color: #1da1f2;
+            transform: translateY(-1px);
+        }
+        input[type=range] {
+            accent-color: #38bdf8;
+            cursor: pointer;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        #fpv-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 30;
+            pointer-events: none;
+            display: none;
+        }
+        .fpv-hud-text {
+            font-family: monospace;
+            text-shadow: 0 0 4px currentColor;
+        }
+        .vision-real { filter: none; }
+        .vision-night-bw { filter: grayscale(100%) contrast(170%) brightness(130%); }
+        .vision-night-green { filter: sepia(100%) hue-rotate(60deg) saturate(600%) contrast(190%) brightness(140%); }
+    </style>
+</head>
+<body class="text-slate-100 select-none">
+
+    <div id="scene-wrapper" class="w-full h-full absolute inset-0 vision-real">
+        <div id="canvas-container"></div>
+    </div>
+
+    <!-- HUD FPV épuré et dégagé (sans éléments parasites devant la caméra) -->
+    <div id="fpv-overlay">
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="w-16 h-16 border-2 border-emerald-400/80 rounded-full flex items-center justify-center relative">
+                <div class="w-2 h-2 bg-emerald-400 rounded-full"></div>
+                <div class="absolute top-0 w-0.5 h-3 bg-emerald-400 -translate-y-2"></div>
+                <div class="absolute bottom-0 w-0.5 h-3 bg-emerald-400 translate-y-2"></div>
+                <div class="absolute left-0 h-0.5 w-3 bg-emerald-400 -translate-x-2"></div>
+                <div class="absolute right-0 h-0.5 w-3 bg-emerald-400 translate-x-2"></div>
+            </div>
+        </div>
+        <div class="absolute top-6 left-6 right-6 flex justify-between items-start pointer-events-auto">
+            <div class="glass-panel px-4 py-3 rounded-xl border-emerald-500/40 bg-slate-950/80">
+                <div class="text-emerald-400 fpv-hud-text text-xs tracking-widest font-bold">FPV ORBIT RECON // ACTIVE</div>
+                <div class="text-white fpv-hud-text text-sm font-bold mt-1" id="fpv-drone-label">DRONE // MISSILES: 3/3</div>
+                <div class="text-slate-400 fpv-hud-text text-[11px] mt-0.5">РУССКИЙ ВОЕННЫЙ КОРАБЛЬ, ИДИ НАХУЙ</div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btn-fire-missile" class="glass-btn px-4 py-2.5 rounded-xl text-xs fpv-hud-text font-bold text-amber-400 border-amber-500/60 bg-slate-950/90 cursor-pointer hover:bg-amber-950/50">
+                    🚀 TIRER MISSILE (3)
+                </button>
+                <button id="btn-vision-mode" class="glass-btn px-3.5 py-2 rounded-xl text-xs fpv-hud-text font-bold text-emerald-400 border-emerald-500/40 bg-slate-950/80 cursor-pointer">
+                    VISION: RÉELLE
+                </button>
+                <button id="btn-exit-fpv" class="glass-btn px-4 py-2 rounded-xl text-xs font-bold text-rose-400 border-rose-500/40 bg-slate-950/80 cursor-pointer hover:bg-rose-950/40">
+                    QUITTER FPV
+                </button>
+            </div>
+        </div>
+
+        <div class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-950/90 border border-emerald-500/30 px-6 py-2 rounded-xl flex items-center gap-8 text-xs fpv-hud-text text-emerald-400 pointer-events-none">
+            <span>MODE: ORBITE AUTO</span>
+            <span id="fpv-missiles-hud">MISSILES: 3/3</span>
+            <span>ALT: <span id="fpv-alt">--</span>M</span>
+        </div>
+    </div>
+
+    <div id="loader" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950 transition-opacity duration-700">
+        <div class="w-12 h-12 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <h2 id="loader-text" class="text-xl font-semibold tracking-wide text-white">Génération de la structure 3D...</h2>
+        <p id="loader-sub" class="text-sm text-slate-400 mt-1">Détroit de Kertch &bull; Simulation Interactive</p>
+    </div>
+
+    <!-- Interface principale -->
+    <div id="main-ui-container">
+        <header class="fixed top-4 left-4 right-4 z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pointer-events-none">
+            <div class="glass-panel rounded-2xl px-5 py-3.5 pointer-events-auto max-w-lg flex flex-wrap items-center gap-3">
+                <div>
+                    <div class="flex items-center gap-2.5">
+                        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <h1 id="main-title" class="text-lg sm:text-xl font-bold tracking-tight text-white">Pont de Crimée (Kertch)</h1>
+                    </div>
+                    <p id="status-text" class="text-xs sm:text-sm text-slate-300 mt-0.5">Simulation 3D active &bull; Double tablier &amp; trafic</p>
+                </div>
+                
+                <div class="flex items-center gap-2 flex-wrap">
+                    <button id="btn-slava" class="btn-ukraine px-3.5 py-2 rounded-xl text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer pointer-events-auto">
+                        <span>🇺🇦 Слава Україні!</span>
+                    </button>
+                    <button id="btn-drone-1" class="btn-drone px-3 py-2 rounded-xl text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer pointer-events-auto" title="Drone FPV 1 (Gauche)">
+                        <span>🛸 Drone 1</span>
+                    </button>
+                    <button id="btn-drone-2" class="btn-drone px-3 py-2 rounded-xl text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer pointer-events-auto" title="Drone FPV 2 (Centre/Arches)">
+                        <span>🛸 Drone 2</span>
+                    </button>
+                    <button id="btn-drone-3" class="btn-drone px-3 py-2 rounded-xl text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer pointer-events-auto" title="Drone FPV 3 (Droite)">
+                        <span>🛸 Drone 3</span>
+                    </button>
+                    <button id="btn-lang" class="glass-btn px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wider text-sky-300 cursor-pointer pointer-events-auto" title="Changer de langue / Change language">
+                        EN / FR
+                    </button>
+                    <a id="btn-x-link" href="https://x.com/RMY1337" target="_blank" class="btn-x px-3.5 py-2 rounded-xl text-xs sm:text-sm flex items-center gap-1.5 cursor-pointer pointer-events-auto" title="Compte X @RMY1337">
+                        <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                        <span>@RMY1337</span>
+                    </a>
+                </div>
+
+                <button id="btn-reset" class="hidden glass-btn bg-rose-600/80 hover:bg-rose-500 text-white px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 cursor-pointer pointer-events-auto">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <span id="txt-reset">Réinitialiser</span>
+                </button>
+            </div>
+
+            <div class="glass-panel rounded-2xl p-3 flex flex-wrap items-center gap-3 pointer-events-auto">
+                <div class="flex items-center gap-2 bg-slate-900/60 px-3 py-1.5 rounded-xl border border-white/10">
+                    <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <div class="flex flex-col">
+                        <div class="flex justify-between text-[10px] text-slate-300 mb-0.5">
+                            <span id="label-time-title">Heure</span>
+                            <span id="time-display" class="font-bold text-sky-400">12:00</span>
+                        </div>
+                        <input id="time-slider" type="range" min="0" max="24" step="0.1" value="12" class="w-28 sm:w-36 h-1.5 bg-slate-700 rounded-lg appearance-none">
+                    </div>
+                </div>
+
+                <button id="btn-wireframe" class="glass-btn rounded-xl px-3.5 py-2 text-xs sm:text-sm font-medium flex items-center gap-2 text-slate-100 cursor-pointer" title="Inspecter le maillage structurel">
+                    <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                    <span id="txt-wireframe">Vue Filaire</span>
+                </button>
+
+                <button id="btn-info" class="glass-btn rounded-xl px-3.5 py-2 text-xs sm:text-sm font-medium flex items-center gap-2 text-slate-100 cursor-pointer" title="Afficher les 5 points clés d'ingénierie">
+                    <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span id="txt-infopoints">5 Points Clés</span>
+                </button>
+            </div>
+        </header>
+
+        <aside id="info-panel" class="fixed top-28 right-4 z-20 w-80 sm:w-96 max-h-[calc(100vh-11rem)] glass-panel rounded-2xl p-5 overflow-y-auto transition-all duration-300 opacity-0 translate-x-8 pointer-events-none">
+            <div class="flex justify-between items-center border-b border-white/15 pb-3 mb-4">
+                <h2 id="panel-title" class="text-base font-bold text-white flex items-center gap-2">
+                    <span class="text-sky-400">05</span> Piliers d'Ingénierie
+                </h2>
+                <button id="close-info" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition cursor-pointer">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <div id="panel-content" class="space-y-3.5 text-xs sm:text-sm">
+                <div class="bg-white/5 border-l-4 border-sky-400 p-3 rounded-r-xl">
+                    <h3 class="font-semibold text-sky-300 mb-1">1. Double Tablier Parallèle</h3>
+                    <p class="text-slate-300 leading-relaxed">Combinaison d'une autoroute à 4 voies et d'une double voie ferrée électrifiée.</p>
+                </div>
+                <div class="bg-white/5 border-l-4 border-emerald-400 p-3 rounded-r-xl">
+                    <h3 class="font-semibold text-emerald-300 mb-1">2. Fondations sur Pieux Profonds</h3>
+                    <p class="text-slate-300 leading-relaxed">Plus de 7 000 pieux tubulaires en acier enfoncés jusqu'à 90 m dans les sédiments.</p>
+                </div>
+                <div class="bg-white/5 border-l-4 border-amber-400 p-3 rounded-r-xl">
+                    <h3 class="font-semibold text-amber-300 mb-1">3. Arches de Navigation en Treillis</h3>
+                    <p class="text-slate-300 leading-relaxed">Deux arches métalliques blanches de 227 m de portée libre pour le passage des navires.</p>
+                </div>
+                <div class="bg-white/5 border-l-4 border-purple-400 p-3 rounded-r-xl">
+                    <h3 class="font-semibold text-purple-300 mb-1">4. Résistance Sismique &amp; Glace</h3>
+                    <p class="text-slate-300 leading-relaxed">Appuis parasismiques et brise-glaces intégrés aux piles principales.</p>
+                </div>
+                <div class="bg-white/5 border-l-4 border-rose-400 p-3 rounded-r-xl">
+                    <h3 class="font-semibold text-rose-300 mb-1">5. Assemblage Modulaire</h3>
+                    <p class="text-slate-300 leading-relaxed">Travées préassemblées à terre puis hissées par vérins hydrauliques.</p>
+                </div>
+            </div>
+        </aside>
+
+        <footer class="fixed bottom-4 left-4 right-4 z-10 flex flex-col items-center gap-2.5 pointer-events-none">
+            <div class="glass-panel rounded-2xl p-2 flex flex-wrap justify-center gap-1.5 sm:gap-2 pointer-events-auto max-w-full">
+                <button data-view="general" class="view-btn glass-btn active rounded-xl px-3.5 py-2 text-xs sm:text-sm font-medium cursor-pointer" data-fr="Vue Générale" data-en="General View">
+                    Vue Générale
+                </button>
+                <button data-view="arches" class="view-btn glass-btn rounded-xl px-3.5 py-2 text-xs sm:text-sm font-medium cursor-pointer" data-fr="Arches Centrales" data-en="Central Arches">
+                    Arches Centrales
+                </button>
+                <button data-view="decks" class="view-btn glass-btn rounded-xl px-3.5 py-2 text-xs sm:text-sm font-medium cursor-pointer" data-fr="Tablier Routier / Ferroviaire" data-en="Road / Rail Decks">
+                    Tablier Routier / Ferroviaire
+                </button>
+                <button data-view="under" class="view-btn glass-btn rounded-xl px-3.5 py-2 text-xs sm:text-sm font-medium cursor-pointer" data-fr="Vue Sous le Pont" data-en="Under Bridge View">
+                    Vue Sous le Pont
+                </button>
+            </div>
+            <div id="help-hint" class="text-[11px] text-slate-300/80 bg-slate-950/50 px-3 py-1 rounded-full backdrop-blur-sm">
+                Clic gauche / 1 doigt : Pivoter &bull; Molette / Pincer : Zoomer &bull; Clic droit / 2 doigts : Déplacer
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let waterMesh, waterGeometry, waterInitialPositions;
+        let sunLight, ambientLight, hemiLight, lightningLight;
+        let bridgeLights = [];
+        let cars = [];
+        let trains = [];
+        let cargoShip;
+        let ukrainianJet = null;
+        let jetBannerMesh = null;
+        let rainSystem = null;
+        let isWireframe = false;
+        let wireframeMaterials = [];
+        let currentLang = 'fr';
+        let userHour = new Date().getHours() + new Date().getMinutes() / 60;
+
+        let activeDrone = null;
+        let activeVisionMode = 0;
+        let mousePos = { x: 0, y: 0 };
+        let availableDrones = [true, true, true];
+        let firedMissile = null;
+        const visionModes = ['vision-real', 'vision-night-bw', 'vision-night-green'];
+        const visionLabels = ['RÉELLE', 'NOCTURNE NB', 'NOCTURNE VERTE'];
+
+        let destructionState = {
+            triggered: false,
+            phase: 'idle',
+            timer: 0,
+            missiles: [],
+            debris: [],
+            explosionParticles: [],
+            waterSplashes: [],
+            residualSmokeSources: [],
+            explosionLights: [],
+            shockwaves: [],
+            shakeIntensity: 0,
+            shipHits: 0,
+            leftRoadDestroyed: false,
+            leftRailDestroyed: false,
+            rightRoadDestroyed: false,
+            rightRailDestroyed: false,
+            leftRoadSplashed: false,
+            leftRailSplashed: false,
+            rightRoadSplashed: false,
+            rightRailSplashed: false,
+            archSplashed: false,
+            jetSpawned: false,
+            shipTiltAxis: new THREE.Vector3(1, 0, 1).normalize()
+        };
+
+        let centralArchesGroup = null;
+        let leftRoadDeckGroup = null;
+        let leftRailDeckGroup = null;
+        let rightRoadDeckGroup = null;
+        let rightRailDeckGroup = null;
+
+        const BRIDGE_LENGTH = 560;
+        const ARCH_SPAN = 96;
+        const PIER_SPACING = 32;
+        const ROAD_Z = -7.5;
+        const RAIL_Z = 7.5;
+        const WATER_LEVEL = 0;
+
+        let cameraTransition = {
+            active: false,
+            startPos: new THREE.Vector3(),
+            endPos: new THREE.Vector3(),
+            startTarget: new THREE.Vector3(),
+            endTarget: new THREE.Vector3(),
+            progress: 0
+        };
+
+        const i18n = {
+            fr: {
+                title: "Pont de Crimée (Kertch) - Modélisation 3D Interactive",
+                loaderText: "Génération de la structure 3D...",
+                loaderSub: "Détroit de Kertch • Simulation Interactive",
+                mainTitle: "Pont de Crimée (Kertch)",
+                statusActive: "Simulation 3D active • Double tablier & trafic",
+                statusImpact: "Impact confirmé ! Effondrement de la travée centrale...",
+                statusAlert: "Alerte : Frappe aérienne et navale sur le pont !",
+                statusJet: "Alerte : Survol d'un avion ukrainien (banderole drapeau)",
+                resetBtn: "Réinitialiser",
+                wireframeBtn: "Vue Filaire",
+                infoBtn: "5 Points Clés",
+                panelTitle: "05 Piliers d'Ingénierie",
+                timeLabel: "Heure",
+                helpHint: "Clic gauche / 1 doigt : Pivoter • Molette / Pincer : Zoomer • Clic droit / 2 doigts : Déplacer"
+            },
+            en: {
+                title: "Crimean Bridge (Kerch) - Interactive 3D Modeling",
+                loaderText: "Generating 3D structure...",
+                loaderSub: "Kerch Strait • Interactive Simulation",
+                mainTitle: "Crimean Bridge (Kerch)",
+                statusActive: "Active 3D simulation • Dual deck & traffic",
+                statusImpact: "Impact confirmed! Central span collapse...",
+                statusAlert: "Alert: Airstrike and naval strike on the bridge!",
+                statusJet: "Alert: Ukrainian jet overflight (flag banner)",
+                resetBtn: "Reset",
+                wireframeBtn: "Wireframe",
+                infoBtn: "5 Key Points",
+                panelTitle: "05 Engineering Pillars",
+                timeLabel: "Time",
+                helpHint: "Left click / 1 finger: Rotate • Scroll / Pinch: Zoom • Right click / 2 fingers: Pan"
+            }
+        };
+
+        const clock = new THREE.Clock();
+
+        function updateEnvironmentByTime(hour) {
+            userHour = hour;
+            const hDisplay = Math.floor(hour);
+            const mDisplay = Math.floor((hour - hDisplay) * 60);
+            const timeDisplayEl = document.getElementById('time-display');
+            if (timeDisplayEl) {
+                timeDisplayEl.textContent = `${String(hDisplay).padStart(2, '0')}:${String(mDisplay).padStart(2, '0')}`;
+            }
+
+            let bgColor, fogColor, sunColor, sunIntensity, hemiIntensity, ambIntensity, lightIntensity;
+            let isNightTime = false;
+            let isStormTime = false;
+
+            if (hour >= 1.0 && hour <= 3.0) {
+                isNightTime = true;
+                isStormTime = true;
+                bgColor = new THREE.Color(0x020617);
+                fogColor = new THREE.Color(0x090d16);
+                sunColor = new THREE.Color(0x1e293b);
+                sunIntensity = 0.05;
+                hemiIntensity = 0.08;
+                ambIntensity = 0.05;
+                lightIntensity = 1.8;
+            } else if (hour > 3.0 && hour < 5.5) {
+                isNightTime = true;
+                bgColor = new THREE.Color(0x030712);
+                fogColor = new THREE.Color(0x030712);
+                sunColor = new THREE.Color(0x1e293b);
+                sunIntensity = 0.08;
+                hemiIntensity = 0.12;
+                ambIntensity = 0.08;
+                lightIntensity = 1.6;
+            } else if (hour >= 5.5 && hour < 7.5) {
+                bgColor = new THREE.Color(0xf43f5e).lerp(new THREE.Color(0xf97316), (hour - 5.5) / 2);
+                fogColor = new THREE.Color(0xfb7185);
+                sunColor = new THREE.Color(0xfde047);
+                sunIntensity = 0.8;
+                hemiIntensity = 0.45;
+                ambIntensity = 0.25;
+                lightIntensity = 0;
+            } else if (hour >= 7.5 && hour < 17.5) {
+                bgColor = new THREE.Color(0x87ceeb);
+                fogColor = new THREE.Color(0x93c5fd);
+                sunColor = new THREE.Color(0xfffbeb);
+                sunIntensity = 1.4;
+                hemiIntensity = 0.75;
+                ambIntensity = 0.35;
+                lightIntensity = 0;
+            } else if (hour >= 17.5 && hour < 20.0) {
+                bgColor = new THREE.Color(0x7c3aed).lerp(new THREE.Color(0xdb2777), (hour - 17.5) / 2.5);
+                fogColor = new THREE.Color(0x8b5cf6);
+                sunColor = new THREE.Color(0xf97316);
+                sunIntensity = 0.75;
+                hemiIntensity = 0.4;
+                ambIntensity = 0.2;
+                lightIntensity = 0.8;
+            } else {
+                isNightTime = true;
+                bgColor = new THREE.Color(0x090d16);
+                fogColor = new THREE.Color(0x0f172a);
+                sunColor = new THREE.Color(0x334155);
+                sunIntensity = 0.1;
+                hemiIntensity = 0.15;
+                ambIntensity = 0.1;
+                lightIntensity = 1.5;
+            }
+
+            if (scene) {
+                scene.background = bgColor;
+                scene.fog.color = fogColor;
+            }
+            if (sunLight) {
+                sunLight.color = sunColor;
+                sunLight.intensity = sunIntensity;
+            }
+            if (hemiLight) hemiLight.intensity = hemiIntensity;
+            if (ambientLight) ambientLight.intensity = ambIntensity;
+
+            bridgeLights.forEach(l => l.intensity = lightIntensity);
+
+            if (rainSystem) {
+                rainSystem.visible = isStormTime;
+            }
+            if (scene && waterMesh) {
+                if (isStormTime) {
+                    scene.fog.density = 0.005;
+                    waterMesh.material.color.setHex(0x020617);
+                } else if (isNightTime) {
+                    scene.fog.density = 0.002;
+                    waterMesh.material.color.setHex(0x082f49);
+                } else {
+                    scene.fog.density = 0.0014;
+                    waterMesh.material.color.setHex(0x0284c7);
+                }
+            }
+        }
+
+        window.onload = function () {
+            try {
+                initScene();
+                buildEnvironment();
+                buildBridgeStructure();
+                buildTrafficAndShip();
+                setupUIEvents();
+                updateEnvironmentByTime(userHour);
+                animate();
+
+                const loader = document.getElementById('loader');
+                if (loader) {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.remove(), 700);
+                }
+            } catch (error) {
+                console.error("Erreur lors de l'initialisation 3D :", error);
+            }
+        };
+
+        function initScene() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb);
+            scene.fog = new THREE.FogExp2(0x93c5fd, 0.0014);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 2500);
+            camera.position.set(130, 68, 155);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.05;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.02;
+            controls.minDistance = 15;
+            controls.maxDistance = 520;
+            controls.target.set(0, 18, 0);
+
+            hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x0369a1, 0.75);
+            scene.add(hemiLight);
+
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+            scene.add(ambientLight);
+
+            sunLight = new THREE.DirectionalLight(0xfffbeb, 1.4);
+            sunLight.position.set(180, 220, 140);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 50;
+            sunLight.shadow.camera.far = 700;
+            const d = 240;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            sunLight.shadow.bias = -0.0005;
+            scene.add(sunLight);
+
+            lightningLight = new THREE.PointLight(0xd946ef, 0, 800);
+            lightningLight.position.set(0, 180, 0);
+            scene.add(lightningLight);
+
+            buildRainSystem();
+            window.addEventListener('resize', onWindowResize);
+
+            window.addEventListener('mousemove', (e) => {
+                mousePos.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mousePos.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+            window.addEventListener('touchmove', (e) => {
+                if (e.touches.length > 0) {
+                    mousePos.x = (e.touches[0].clientX / window.innerWidth) * 2 - 1;
+                    mousePos.y = -(e.touches[0].clientY / window.innerHeight) * 2 + 1;
+                }
+            }, { passive: true });
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function buildEnvironment() {
+            waterGeometry = new THREE.PlaneGeometry(2400, 2400, 96, 96);
+            waterGeometry.rotateX(-Math.PI / 2);
+
+            const posAttr = waterGeometry.attributes.position;
+            waterInitialPositions = new Float32Array(posAttr.array.length);
+            waterInitialPositions.set(posAttr.array);
+
+            const waterMaterial = new THREE.MeshStandardMaterial({
+                color: 0x0284c7,
+                roughness: 0.22,
+                metalness: 0.65,
+                flatShading: false
+            });
+            wireframeMaterials.push(waterMaterial);
+
+            waterMesh = new THREE.Mesh(waterGeometry, waterMaterial);
+            waterMesh.receiveShadow = true;
+            scene.add(waterMesh);
+
+            const landMat = new THREE.MeshStandardMaterial({ color: 0x4d7c0f, roughness: 0.9 });
+            wireframeMaterials.push(landMat);
+
+            const westShore = new THREE.Mesh(new THREE.BoxGeometry(300, 14, 900), landMat);
+            westShore.position.set(-BRIDGE_LENGTH / 2 - 130, 5, 0);
+            westShore.receiveShadow = true;
+            scene.add(westShore);
+
+            const eastShore = new THREE.Mesh(new THREE.BoxGeometry(300, 14, 900), landMat);
+            eastShore.position.set(BRIDGE_LENGTH / 2 + 130, 5, 0);
+            eastShore.receiveShadow = true;
+            scene.add(eastShore);
+        }
+
+        function buildRainSystem() {
+            const rainCount = 2000;
+            const rainGeo = new THREE.BufferGeometry();
+            const positions = new Float32Array(rainCount * 3);
+
+            for (let i = 0; i < rainCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 800;
+                positions[i + 1] = Math.random() * 200;
+                positions[i + 2] = (Math.random() - 0.5) * 400;
+            }
+            rainGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const rainMat = new THREE.PointsMaterial({
+                color: 0x93c5fd,
+                size: 1.2,
+                transparent: true,
+                opacity: 0.6
+            });
+
+            rainSystem = new THREE.Points(rainGeo, rainMat);
+            rainSystem.visible = false;
+            scene.add(rainSystem);
+        }
+
+        function getDeckY(x) {
+            const absX = Math.abs(x);
+            const halfSpan = ARCH_SPAN / 2;
+            if (absX <= halfSpan) {
+                return 22.5;
+            }
+            const rampDist = BRIDGE_LENGTH / 2 - halfSpan;
+            const t = Math.min(1, (absX - halfSpan) / rampDist);
+            return 10.5 + 12.0 * (0.5 * (1 + Math.cos(t * Math.PI)));
+        }
+
+        function registerMat(mat) {
+            wireframeMaterials.push(mat);
+            return mat;
+        }
+
+        function buildBridgeStructure() {
+            const concreteMat = registerMat(new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.75 }));
+            const darkConcreteMat = registerMat(new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.85 }));
+            const asphaltMat = registerMat(new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.85 }));
+            const railBallastMat = registerMat(new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 }));
+            const steelWhiteMat = registerMat(new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.45, roughness: 0.35 }));
+            const railSteelMat = registerMat(new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.3 }));
+
+            const halfBridge = BRIDGE_LENGTH / 2;
+            const halfSpan = ARCH_SPAN / 2;
+
+            const pierPositions = [];
+            for (let x = -halfBridge + 16; x <= halfBridge - 16; x += PIER_SPACING) {
+                if (Math.abs(x) < halfSpan - 2) continue;
+                pierPositions.push(x);
+            }
+            pierPositions.push(-halfSpan, halfSpan);
+
+            pierPositions.forEach(x => {
+                const isMainPier = Math.abs(Math.abs(x) - halfSpan) < 1;
+                const yTop = getDeckY(x) - 0.8;
+
+                const baseWidth = isMainPier ? 10 : 5.5;
+                const baseLength = 26;
+                const footing = new THREE.Mesh(new THREE.BoxGeometry(baseWidth, 4.5, baseLength), darkConcreteMat);
+                footing.position.set(x, 1.2, 0);
+                footing.castShadow = true;
+                footing.receiveShadow = true;
+                scene.add(footing);
+
+                const iceBreakerGeo = new THREE.ConeGeometry(baseWidth * 0.55, 4.2, 4);
+                iceBreakerGeo.rotateY(Math.PI / 4);
+                const ibFront = new THREE.Mesh(iceBreakerGeo, darkConcreteMat);
+                ibFront.position.set(x, 1.2, baseLength / 2 + 1.2);
+                ibFront.rotation.x = Math.PI / 2;
+                scene.add(ibFront);
+
+                [ROAD_Z, RAIL_Z].forEach(zPos => {
+                    const colWidth = isMainPier ? 3.8 : 2.1;
+                    const colDepth = isMainPier ? 7.5 : 5.2;
+                    const colHeight = yTop - 2.5;
+                    const col = new THREE.Mesh(new THREE.BoxGeometry(colWidth, colHeight, colDepth), concreteMat);
+                    col.position.set(x, 2.5 + colHeight / 2, zPos);
+                    col.castShadow = true;
+                    col.receiveShadow = true;
+                    scene.add(col);
+
+                    const cap = new THREE.Mesh(new THREE.BoxGeometry(colWidth + 1.4, 1.1, colDepth + 2.4), concreteMat);
+                    cap.position.set(x, yTop, zPos);
+                    cap.castShadow = true;
+                    scene.add(cap);
+                });
+            });
+
+            const segStep = 4;
+            for (let x = -halfBridge; x < halfBridge; x += segStep) {
+                const xMid = x + segStep / 2;
+                if (Math.abs(xMid) < halfSpan) continue;
+
+                const y1 = getDeckY(x);
+                const y2 = getDeckY(x + segStep);
+                const yMid = (y1 + y2) / 2;
+                const slope = Math.atan2(y2 - y1, segStep);
+                const segLen = Math.hypot(segStep, y2 - y1) + 0.08;
+
+                buildDeckSegment(scene, xMid, yMid, segLen, slope, asphaltMat, concreteMat, railBallastMat, railSteelMat);
+            }
+
+            // Tabliers centraux distincts avec pivots aux extrémités extérieures pour tomber parfaitement dans l'eau
+            leftRoadDeckGroup = new THREE.Group();
+            leftRoadDeckGroup.position.set(-halfSpan, 22.5, ROAD_Z);
+            for (let lx = 0; lx < halfSpan; lx += segStep) {
+                buildSingleDeck(leftRoadDeckGroup, lx + segStep / 2, 0, segStep + 0.05, 0, asphaltMat, concreteMat, true);
+            }
+            scene.add(leftRoadDeckGroup);
+
+            leftRailDeckGroup = new THREE.Group();
+            leftRailDeckGroup.position.set(-halfSpan, 22.5, RAIL_Z);
+            for (let lx = 0; lx < halfSpan; lx += segStep) {
+                buildSingleDeck(leftRailDeckGroup, lx + segStep / 2, 0, segStep + 0.05, 0, railBallastMat, railSteelMat, false);
+            }
+            scene.add(leftRailDeckGroup);
+
+            rightRoadDeckGroup = new THREE.Group();
+            rightRoadDeckGroup.position.set(halfSpan, 22.5, ROAD_Z);
+            for (let rx = -halfSpan; rx < 0; rx += segStep) {
+                buildSingleDeck(rightRoadDeckGroup, rx + segStep / 2, 0, segStep + 0.05, 0, asphaltMat, concreteMat, true);
+            }
+            scene.add(rightRoadDeckGroup);
+
+            rightRailDeckGroup = new THREE.Group();
+            rightRailDeckGroup.position.set(halfSpan, 22.5, RAIL_Z);
+            for (let rx = -halfSpan; rx < 0; rx += segStep) {
+                buildSingleDeck(rightRailDeckGroup, rx + segStep / 2, 0, segStep + 0.05, 0, railBallastMat, railSteelMat, false);
+            }
+            scene.add(rightRailDeckGroup);
+
+            centralArchesGroup = new THREE.Group();
+            centralArchesGroup.position.set(0, 22.5, 0);
+
+            const archZPositions = [ROAD_Z - 5.4, ROAD_Z + 5.4, RAIL_Z - 5.2, RAIL_Z + 5.2];
+            const archHeight = 24;
+            const archSegments = 16;
+
+            archZPositions.forEach((zPos, idx) => {
+                const isRailArch = idx >= 2;
+                const hScale = isRailArch ? 1.08 : 0.96;
+
+                for (let i = 0; i < archSegments; i++) {
+                    const t1 = i / archSegments;
+                    const t2 = (i + 1) / archSegments;
+                    const x1 = -halfSpan + t1 * ARCH_SPAN;
+                    const x2 = -halfSpan + t2 * ARCH_SPAN;
+
+                    const yBottom1 = Math.sin(t1 * Math.PI) * (archHeight * hScale);
+                    const yBottom2 = Math.sin(t2 * Math.PI) * (archHeight * hScale);
+                    const yTop1 = yBottom1 + 3.4;
+                    const yTop2 = yBottom2 + 3.4;
+
+                    addBeam(centralArchesGroup, new THREE.Vector3(x1, yBottom1, zPos), new THREE.Vector3(x2, yBottom2, zPos), 0.75, steelWhiteMat);
+                    addBeam(centralArchesGroup, new THREE.Vector3(x1, yTop1, zPos), new THREE.Vector3(x2, yTop2, zPos), 0.75, steelWhiteMat);
+                    addBeam(centralArchesGroup, new THREE.Vector3(x1, yBottom1, zPos), new THREE.Vector3(x1, yTop1, zPos), 0.45, steelWhiteMat);
+                    addBeam(centralArchesGroup, new THREE.Vector3(x1, yBottom1, zPos), new THREE.Vector3(x2, yTop2, zPos), 0.4, steelWhiteMat);
+
+                    if (i > 0 && i < archSegments) {
+                        addBeam(centralArchesGroup, new THREE.Vector3(x1, 0, zPos), new THREE.Vector3(x1, yBottom1, zPos), 0.24, railSteelMat);
+                    }
+                }
+            });
+
+            scene.add(centralArchesGroup);
+
+            const poleMat = registerMat(new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.6 }));
+            const bulbMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+
+            for (let x = -halfBridge + 20; x <= halfBridge - 20; x += 28) {
+                if (Math.abs(x) < halfSpan) continue;
+                const y = getDeckY(x);
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 5.2, 6), poleMat);
+                pole.position.set(x, y + 2.6, ROAD_Z - 4.8);
+                scene.add(pole);
+
+                const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), bulbMat);
+                lamp.position.set(x, y + 5.2, ROAD_Z - 4.4);
+                scene.add(lamp);
+
+                const pLight = new THREE.PointLight(0xffedd5, 0, 26);
+                pLight.position.set(x, y + 5.0, ROAD_Z - 3.5);
+                scene.add(pLight);
+                bridgeLights.push(pLight);
+            }
+        }
+
+        function addBeam(parent, p1, p2, thickness, material) {
+            const dist = p1.distanceTo(p2);
+            const geo = new THREE.BoxGeometry(thickness, dist, thickness);
+            const mesh = new THREE.Mesh(geo, material);
+            mesh.position.copy(p1).add(p2).multiplyScalar(0.5);
+            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), p2.clone().sub(p1).normalize());
+            mesh.castShadow = true;
+            parent.add(mesh);
+            return mesh;
+        }
+
+        function buildTrafficAndShip() {
+            const carColors = [0xef4444, 0x3b82f6, 0xf8fafc, 0x10b981, 0xf59e0b, 0x64748b];
+            const halfBridge = BRIDGE_LENGTH / 2;
+
+            for (let i = 0; i < 28; i++) {
+                const dir = i % 2 === 0 ? 1 : -1;
+                const laneOffset = dir === 1 ? (i % 4 === 0 ? 1.5 : 3.4) : (i % 4 === 1 ? -1.5 : -3.4);
+                const isTruck = i % 5 === 0;
+
+                const carGroup = new THREE.Group();
+                const bodyColor = carColors[i % carColors.length];
+                const bodyMat = registerMat(new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.35, metalness: 0.4 }));
+
+                if (isTruck) {
+                    const trailer = new THREE.Mesh(new THREE.BoxGeometry(5.2, 1.7, 1.45), bodyMat);
+                    trailer.position.y = 0.95;
+                    trailer.castShadow = true;
+                    carGroup.add(trailer);
+
+                    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 1.4), registerMat(new THREE.MeshStandardMaterial({ color: 0xf1f5f9 })));
+                    cab.position.set(dir * 3.1, 0.8, 0);
+                    carGroup.add(cab);
+                } else {
+                    const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.65, 1.25), bodyMat);
+                    chassis.position.y = 0.45;
+                    chassis.castShadow = true;
+                    carGroup.add(chassis);
+
+                    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.55, 1.05), registerMat(new THREE.MeshStandardMaterial({ color: 0x0f172a })));
+                    cabin.position.set(-dir * 0.15, 0.95, 0);
+                    carGroup.add(cabin);
+                }
+
+                const headLight = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.9), new THREE.MeshBasicMaterial({ color: 0xfef9c3 }));
+                headLight.position.set(dir * (isTruck ? 3.8 : 1.32), 0.5, 0);
+                carGroup.add(headLight);
+
+                const startX = -halfBridge + (i / 28) * BRIDGE_LENGTH;
+                carGroup.position.set(startX, getDeckY(startX) + 0.22, ROAD_Z + laneOffset);
+                scene.add(carGroup);
+
+                cars.push({
+                    mesh: carGroup,
+                    dir: dir,
+                    speed: (0.28 + (i % 4) * 0.04) * (isTruck ? 0.8 : 1.0),
+                    isFalling: false,
+                    inWater: false,
+                    fallVelocity: new THREE.Vector3(),
+                    fallRotation: new THREE.Vector3()
+                });
+            }
+
+            [
+                { dir: 1, z: RAIL_Z + 1.8, startX: -180, color: 0xdc2626 },
+                { dir: -1, z: RAIL_Z - 1.8, startX: 160, color: 0x2563eb }
+            ].forEach(cfg => {
+                const trainObj = {
+                    headX: cfg.startX,
+                    speed: cfg.dir * 0.36,
+                    z: cfg.z,
+                    cars: []
+                };
+
+                const wagonMat = registerMat(new THREE.MeshStandardMaterial({ color: cfg.color, roughness: 0.4, metalness: 0.3 }));
+                for (let w = 0; w < 7; w++) {
+                    const wagonMesh = new THREE.Mesh(new THREE.BoxGeometry(7.6, 1.9, 1.55), wagonMat);
+                    wagonMesh.castShadow = true;
+                    scene.add(wagonMesh);
+                    trainObj.cars.push({
+                        mesh: wagonMesh,
+                        offset: -cfg.dir * w * 8.2,
+                        isFalling: false,
+                        inWater: false,
+                        fallVel: 0,
+                        forwardVel: 0
+                    });
+                }
+                trains.push(trainObj);
+            });
+
+            cargoShip = new THREE.Group();
+            const hullMat = registerMat(new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.6 }));
+            const deckMat = registerMat(new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 }));
+            const bridgeMat = registerMat(new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 }));
+
+            const hull = new THREE.Mesh(new THREE.BoxGeometry(11, 5.5, 58), hullMat);
+            hull.position.y = 1.5;
+            hull.castShadow = true;
+            cargoShip.add(hull);
+
+            const bowGeo = new THREE.ConeGeometry(7.8, 12, 4);
+            bowGeo.rotateY(Math.PI / 4);
+            bowGeo.rotateX(-Math.PI / 2);
+            const bow = new THREE.Mesh(bowGeo, hullMat);
+            bow.position.set(0, 1.5, -34);
+            cargoShip.add(bow);
+
+            const mainDeck = new THREE.Mesh(new THREE.BoxGeometry(10.6, 0.5, 56), deckMat);
+            mainDeck.position.y = 4.3;
+            cargoShip.add(mainDeck);
+
+            const superStruct = new THREE.Mesh(new THREE.BoxGeometry(9.2, 7.5, 9), bridgeMat);
+            superStruct.position.set(0, 8.0, 21);
+            superStruct.castShadow = true;
+            cargoShip.add(superStruct);
+
+            const contColors = [0x0284c7, 0xd97706, 0x059669, 0xdc2626];
+            for (let cz = -20; cz <= 10; cz += 7.5) {
+                for (let cx = -3.2; cx <= 3.2; cx += 3.2) {
+                    const hLayers = 1 + Math.floor(Math.random() * 2);
+                    for (let cy = 0; cy < hLayers; cy++) {
+                        const cMat = registerMat(new THREE.MeshStandardMaterial({ color: contColors[(Math.abs(cz) + cy) % contColors.length] }));
+                        const container = new THREE.Mesh(new THREE.BoxGeometry(2.8, 2.4, 6.8), cMat);
+                        container.position.set(cx, 5.7 + cy * 2.45, cz);
+                        container.castShadow = true;
+                        cargoShip.add(container);
+                    }
+                }
+            }
+
+            cargoShip.position.set(0, 0, 55);
+            scene.add(cargoShip);
+        }
+
+        function spawnUkrainianJet() {
+            if (destructionState.jetSpawned) return;
+            destructionState.jetSpawned = true;
+
+            const tLang = i18n[currentLang];
+            const statusEl = document.getElementById('status-text');
+            if (statusEl) statusEl.textContent = tLang.statusJet;
+
+            ukrainianJet = new THREE.Group();
+            const jetMat = registerMat(new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.3 }));
+
+            const fuselage = new THREE.Mesh(new THREE.ConeGeometry(0.8, 6, 8), jetMat);
+            fuselage.rotation.z = -Math.PI / 2;
+            ukrainianJet.add(fuselage);
+
+            const wingsGeo = new THREE.BoxGeometry(2, 0.1, 7);
+            const wings = new THREE.Mesh(wingsGeo, jetMat);
+            wings.position.set(-0.5, 0, 0);
+            ukrainianJet.add(wings);
+
+            ukrainianJet.position.set(-300, 75, -50);
+            scene.add(ukrainianJet);
+
+            const bannerGroup = new THREE.Group();
+            const blueGeo = new THREE.PlaneGeometry(16, 2.5);
+            const blueMat = new THREE.MeshBasicMaterial({ color: 0x0057b7, side: THREE.DoubleSide });
+            const blueMesh = new THREE.Mesh(blueGeo, blueMat);
+            blueMesh.position.set(0, 1.25, 0);
+            bannerGroup.add(blueMesh);
+
+            const yellowGeo = new THREE.PlaneGeometry(16, 2.5);
+            const yellowMat = new THREE.MeshBasicMaterial({ color: 0xffd700, side: THREE.DoubleSide });
+            const yellowMesh = new THREE.Mesh(yellowGeo, yellowMat);
+            yellowMesh.position.set(0, -1.25, 0);
+            bannerGroup.add(yellowMesh);
+
+            bannerGroup.position.set(-11, 0, 0);
+            ukrainianJet.add(bannerGroup);
+            jetBannerMesh = bannerGroup;
+        }
+
+        function buildDeckSegment(parent, x, y, length, slope, asphaltMat, concreteMat, railBallastMat, railSteelMat) {
+            const segGroup = new THREE.Group();
+            segGroup.position.set(x, y, 0);
+            segGroup.rotation.z = slope;
+
+            const roadDeck = new THREE.Mesh(new THREE.BoxGeometry(length, 0.9, 10.6), concreteMat);
+            roadDeck.position.set(0, -0.45, ROAD_Z);
+            roadDeck.castShadow = true;
+            roadDeck.receiveShadow = true;
+            segGroup.add(roadDeck);
+
+            const asphalt = new THREE.Mesh(new THREE.BoxGeometry(length, 0.14, 9.6), asphaltMat);
+            asphalt.position.set(0, 0.05, ROAD_Z);
+            asphalt.receiveShadow = true;
+            segGroup.add(asphalt);
+
+            [-4.9, 0, 4.9].forEach(zOff => {
+                const barrier = new THREE.Mesh(new THREE.BoxGeometry(length, 0.55, 0.25), concreteMat);
+                barrier.position.set(0, 0.35, ROAD_Z + zOff);
+                segGroup.add(barrier);
+            });
+
+            const railDeck = new THREE.Mesh(new THREE.BoxGeometry(length, 1.1, 10.0), concreteMat);
+            railDeck.position.set(0, -0.55, RAIL_Z);
+            railDeck.castShadow = true;
+            railDeck.receiveShadow = true;
+            segGroup.add(railDeck);
+
+            const ballast = new THREE.Mesh(new THREE.BoxGeometry(length, 0.25, 8.6), railBallastMat);
+            ballast.position.set(0, 0.1, RAIL_Z);
+            segGroup.add(ballast);
+
+            [-2.4, -1.2, 1.2, 2.4].forEach(rOff => {
+                const rail = new THREE.Mesh(new THREE.BoxGeometry(length, 0.15, 0.12), railSteelMat);
+                rail.position.set(0, 0.28, RAIL_Z + rOff);
+                segGroup.add(rail);
+            });
+
+            parent.add(segGroup);
+        }
+
+        function buildSingleDeck(parent, x, y, length, slope, surfaceMat, baseMat, isRoad) {
+            const segGroup = new THREE.Group();
+            segGroup.position.set(x, y, 0);
+            segGroup.rotation.z = slope;
+
+            const deckWidth = isRoad ? 10.6 : 10.0;
+            const concreteMat = registerMat(new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.75 }));
+            const deck = new THREE.Mesh(new THREE.BoxGeometry(length, isRoad ? 0.9 : 1.1, deckWidth), concreteMat);
+            deck.position.set(length / 2, -0.5, 0);
+            deck.castShadow = true;
+            deck.receiveShadow = true;
+            segGroup.add(deck);
+
+            const surface = new THREE.Mesh(new THREE.BoxGeometry(length, 0.15, deckWidth - 1.0), surfaceMat);
+            surface.position.set(length / 2, 0.05, 0);
+            surface.receiveShadow = true;
+            segGroup.add(surface);
+
+            if (isRoad) {
+                [-4.9, 0, 4.9].forEach(zOff => {
+                    const barrier = new THREE.Mesh(new THREE.BoxGeometry(length, 0.55, 0.25), concreteMat);
+                    barrier.position.set(length / 2, 0.35, zOff);
+                    segGroup.add(barrier);
+                });
+            } else {
+                [-2.4, -1.2, 1.2, 2.4].forEach(rOff => {
+                    const rail = new THREE.Mesh(new THREE.BoxGeometry(length, 0.15, 0.12), registerMat(new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.3 })));
+                    rail.position.set(length / 2, 0.28, rOff);
+                    segGroup.add(rail);
+                });
+            }
+
+            parent.add(segGroup);
+        }
+
+        function launchFPVDrone(droneIndex) {
+            if (!availableDrones[droneIndex - 1]) return;
+            if (controls) controls.enabled = false;
+            cameraTransition.active = false;
+
+            const startAngles = [0.6, Math.PI, -0.8];
+            activeDrone = {
+                index: droneIndex,
+                orbitAngle: startAngles[droneIndex - 1] || 0,
+                orbitSpeed: droneIndex === 2 ? -0.18 : 0.18,
+                missilesRemaining: 3,
+                aimYaw: 0,
+                aimPitch: 0,
+                position: new THREE.Vector3(),
+                mesh: null
+            };
+            firedMissile = null;
+
+            const droneGroup = new THREE.Group();
+            const bodyMat = registerMat(new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8 }));
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.3, 0.8), bodyMat);
+            droneGroup.add(body);
+
+            scene.add(droneGroup);
+            activeDrone.mesh = droneGroup;
+
+            const mainUi = document.getElementById('main-ui-container');
+            if (mainUi) mainUi.style.display = 'none';
+
+            const fpvOverlay = document.getElementById('fpv-overlay');
+            if (fpvOverlay) fpvOverlay.style.display = 'block';
+
+            updateDroneHUD();
+        }
+
+        function updateDroneHUD() {
+            if (!activeDrone) return;
+            const rem = activeDrone.missilesRemaining;
+            const droneLbl = document.getElementById('fpv-drone-label');
+            if (droneLbl) droneLbl.textContent = `DRONE #${activeDrone.index} // MISSILES: ${rem}/3`;
+            const fireBtn = document.getElementById('btn-fire-missile');
+            if (fireBtn) fireBtn.textContent = `🚀 TIRER MISSILE (${rem})`;
+            const hudMissiles = document.getElementById('fpv-missiles-hud');
+            if (hudMissiles) hudMissiles.textContent = `MISSILES: ${rem}/3`;
+        }
+
+        function fireMissileFromDrone() {
+            if (!activeDrone || firedMissile || activeDrone.missilesRemaining <= 0) return;
+
+            activeDrone.missilesRemaining -= 1;
+            updateDroneHUD();
+
+            camera.updateMatrixWorld(true);
+
+            // Tir parfaitement droit dans l'axe central de la caméra orientée par le joueur
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const forwardDir = raycaster.ray.direction.clone().normalize();
+
+            const camDown = new THREE.Vector3(0, -1, 0).applyQuaternion(camera.quaternion);
+            const spawnPos = camera.position.clone().addScaledVector(forwardDir, 4.0).addScaledVector(camDown, 0.5);
+
+            const targetPoint = raycaster.ray.origin.clone().addScaledVector(forwardDir, 500);
+            const missileDir = targetPoint.sub(spawnPos).normalize();
+
+            const missileGroup = new THREE.Group();
+            const body = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.18, 0.28, 3.2, 8),
+                new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 })
+            );
+            body.rotation.x = Math.PI / 2;
+            missileGroup.add(body);
+
+            const warhead = new THREE.Mesh(
+                new THREE.ConeGeometry(0.18, 0.8, 8),
+                new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+            );
+            warhead.rotation.x = Math.PI / 2;
+            warhead.position.z = 1.9;
+            missileGroup.add(warhead);
+
+            const flame = new THREE.Mesh(
+                new THREE.ConeGeometry(0.25, 1.8, 8),
+                new THREE.MeshBasicMaterial({ color: 0xf97316 })
+            );
+            flame.rotation.x = -Math.PI / 2;
+            flame.position.z = -2.2;
+            missileGroup.add(flame);
+
+            missileGroup.position.copy(spawnPos);
+            missileGroup.lookAt(spawnPos.clone().add(missileDir));
+            scene.add(missileGroup);
+
+            firedMissile = {
+                mesh: missileGroup,
+                direction: missileDir.clone(),
+                velocity: missileDir.clone().multiplyScalar(280),
+                droneIndex: activeDrone.index,
+                stage: 'flying',
+                timer: 0
+            };
+
+            const fpvOverlay = document.getElementById('fpv-overlay');
+            if (fpvOverlay) fpvOverlay.style.display = 'none';
+        }
+
+        function exitFPVMode() {
+            if (activeDrone) {
+                availableDrones[activeDrone.index - 1] = false;
+                const droneBtn = document.getElementById(`btn-drone-${activeDrone.index}`);
+                if (droneBtn) {
+                    droneBtn.classList.add('opacity-40', 'cursor-not-allowed');
+                    droneBtn.disabled = true;
+                }
+                scene.remove(activeDrone.mesh);
+                activeDrone = null;
+            }
+            if (firedMissile && firedMissile.mesh) {
+                scene.remove(firedMissile.mesh);
+                firedMissile = null;
+            }
+            if (controls) controls.enabled = true;
+
+            const fpvOverlay = document.getElementById('fpv-overlay');
+            if (fpvOverlay) fpvOverlay.style.display = 'none';
+
+            const mainUi = document.getElementById('main-ui-container');
+            if (mainUi) mainUi.style.display = 'block';
+        }
+
+        function setupUIEvents() {
+            const btnFire = document.getElementById('btn-fire-missile');
+            if (btnFire) btnFire.addEventListener('click', fireMissileFromDrone);
+
+            const btnDrone1 = document.getElementById('btn-drone-1');
+            const btnDrone2 = document.getElementById('btn-drone-2');
+            const btnDrone3 = document.getElementById('btn-drone-3');
+            if (btnDrone1) btnDrone1.addEventListener('click', () => launchFPVDrone(1));
+            if (btnDrone2) btnDrone2.addEventListener('click', () => launchFPVDrone(2));
+            if (btnDrone3) btnDrone3.addEventListener('click', () => launchFPVDrone(3));
+
+            const btnVision = document.getElementById('btn-vision-mode');
+            if (btnVision) {
+                btnVision.addEventListener('click', () => {
+                    activeVisionMode = (activeVisionMode + 1) % visionModes.length;
+                    const sceneWrapper = document.getElementById('scene-wrapper');
+                    if (sceneWrapper) sceneWrapper.className = `w-full h-full absolute inset-0 ${visionModes[activeVisionMode]}`;
+                    btnVision.textContent = `VISION: ${visionLabels[activeVisionMode]}`;
+                });
+            }
+
+            const btnExitFpv = document.getElementById('btn-exit-fpv');
+            if (btnExitFpv) btnExitFpv.addEventListener('click', exitFPVMode);
+
+            const btnLang = document.getElementById('btn-lang');
+            if (btnLang) {
+                btnLang.addEventListener('click', () => {
+                    currentLang = currentLang === 'fr' ? 'en' : 'fr';
+                    applyLanguage();
+                });
+            }
+
+            const timeSlider = document.getElementById('time-slider');
+            if (timeSlider) {
+                timeSlider.value = userHour;
+                timeSlider.addEventListener('input', (e) => {
+                    updateEnvironmentByTime(parseFloat(e.target.value));
+                });
+            }
+
+            const btnSlava = document.getElementById('btn-slava');
+            if (btnSlava) btnSlava.addEventListener('click', triggerSlavaUkraini);
+
+            const btnReset = document.getElementById('btn-reset');
+            if (btnReset) btnReset.addEventListener('click', resetSimulation);
+
+            const btnWireframe = document.getElementById('btn-wireframe');
+            if (btnWireframe) {
+                btnWireframe.addEventListener('click', (e) => {
+                    isWireframe = !isWireframe;
+                    e.currentTarget.classList.toggle('active', isWireframe);
+                    wireframeMaterials.forEach(m => {
+                        m.wireframe = isWireframe;
+                    });
+                });
+            }
+
+            const infoPanel = document.getElementById('info-panel');
+            const btnInfo = document.getElementById('btn-info');
+            if (btnInfo && infoPanel) {
+                btnInfo.addEventListener('click', () => {
+                    const isOpen = !infoPanel.classList.contains('opacity-0');
+                    if (isOpen) {
+                        infoPanel.classList.add('opacity-0', 'translate-x-8', 'pointer-events-none');
+                    } else {
+                        infoPanel.classList.remove('opacity-0', 'translate-x-8', 'pointer-events-none');
+                    }
+                });
+            }
+
+            const closeInfo = document.getElementById('close-info');
+            if (closeInfo && infoPanel) {
+                closeInfo.addEventListener('click', () => {
+                    infoPanel.classList.add('opacity-0', 'translate-x-8', 'pointer-events-none');
+                });
+            }
+
+            const presets = {
+                general: { pos: new THREE.Vector3(130, 68, 155), target: new THREE.Vector3(0, 18, 0) },
+                arches: { pos: new THREE.Vector3(52, 42, 72), target: new THREE.Vector3(0, 26, 0) },
+                decks: { pos: new THREE.Vector3(-95, 29, 26), target: new THREE.Vector3(-25, 21, 0) },
+                under: { pos: new THREE.Vector3(38, 6, 48), target: new THREE.Vector3(0, 18, 0) }
+            };
+
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    const preset = presets[btn.dataset.view];
+                    if (preset) {
+                        cameraTransition.active = true;
+                        cameraTransition.progress = 0;
+                        cameraTransition.startPos.copy(camera.position);
+                        cameraTransition.endPos.copy(preset.pos);
+                        cameraTransition.startTarget.copy(controls.target);
+                        cameraTransition.endTarget.copy(preset.target);
+                    }
+                });
+            });
+        }
+
+        function applyLanguage() {
+            const t = i18n[currentLang];
+            if (!t) return;
+
+            const pageTitle = document.getElementById('page-title');
+            if (pageTitle) pageTitle.textContent = t.title;
+
+            const mainTitle = document.getElementById('main-title');
+            if (mainTitle) mainTitle.textContent = t.mainTitle;
+
+            const statusEl = document.getElementById('status-text');
+            if (statusEl) {
+                if (destructionState.jetSpawned) {
+                    statusEl.textContent = t.statusJet;
+                } else if (destructionState.phase === 'exploding') {
+                    statusEl.textContent = t.statusImpact;
+                } else if (destructionState.triggered) {
+                    statusEl.textContent = t.statusAlert;
+                } else {
+                    statusEl.textContent = t.statusActive;
+                }
+            }
+
+            const txtReset = document.getElementById('txt-reset');
+            if (txtReset) txtReset.textContent = t.resetBtn;
+
+            const txtWireframe = document.getElementById('txt-wireframe');
+            if (txtWireframe) txtWireframe.textContent = t.wireframeBtn;
+
+            const txtInfopoints = document.getElementById('txt-infopoints');
+            if (txtInfopoints) txtInfopoints.textContent = t.infoBtn;
+
+            const labelTime = document.getElementById('label-time-title');
+            if (labelTime) labelTime.textContent = t.timeLabel;
+
+            const helpHint = document.getElementById('help-hint');
+            if (helpHint) helpHint.textContent = t.helpHint;
+
+            const panelTitle = document.getElementById('panel-title');
+            if (panelTitle) {
+                panelTitle.innerHTML = currentLang === 'fr'
+                    ? '<span class="text-sky-400">05</span> Piliers d\'Ingénierie'
+                    : '<span class="text-sky-400">05</span> Engineering Pillars';
+            }
+
+            const panelContent = document.getElementById('panel-content');
+            if (panelContent) {
+                panelContent.innerHTML = currentLang === 'fr' ? `
+                    <div class="bg-white/5 border-l-4 border-sky-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-sky-300 mb-1">1. Double Tablier Parallèle</h3>
+                        <p class="text-slate-300 leading-relaxed">Combinaison d'une autoroute à 4 voies et d'une double voie ferrée électrifiée.</p>
+                    </div>
+                    <div class="bg-white/5 border-l-4 border-emerald-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-emerald-300 mb-1">2. Fondations sur Pieux Profonds</h3>
+                        <p class="text-slate-300 leading-relaxed">Plus de 7 000 pieux tubulaires en acier enfoncés jusqu'à 90 m dans les sédiments.</p>
+                    </div>
+                    <div class="bg-white/5 border-l-4 border-amber-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-amber-300 mb-1">3. Arches de Navigation en Treillis</h3>
+                        <p class="text-slate-300 leading-relaxed">Deux arches métalliques blanches de 227 m de portée libre pour le passage des navires.</p>
+                    </div>
+                    <div class="bg-white/5 border-l-4 border-purple-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-purple-300 mb-1">4. Résistance Sismique &amp; Glace</h3>
+                        <p class="text-slate-300 leading-relaxed">Appuis parasismiques et brise-glaces intégrés aux piles principales.</p>
+                    </div>
+                    <div class="bg-white/5 border-l-4 border-rose-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-rose-300 mb-1">5. Assemblage Modulaire</h3>
+                        <p class="text-slate-300 leading-relaxed">Travées préassemblées à terre puis hissées par vérins hydrauliques.</p>
+                    </div>
+                ` : `
+                    <div class="bg-white/5 border-l-4 border-sky-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-sky-300 mb-1">1. Parallel Dual Deck</h3>
+                        <p class="text-slate-300 leading-relaxed">Combination of a 4-lane highway and an electrified double-track railway.</p>
+                    </div>
+                    <div class="bg-white/5 border-l-4 border-emerald-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-emerald-300 mb-1">2. Deep Pile Foundations</h3>
+                        <p class="text-slate-300 leading-relaxed">Over 7,000 tubular steel piles driven up to 90 m deep into sea sediments.</p>
+                    </div>
+                    <div class="bg-white/5 border-l-4 border-amber-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-amber-300 mb-1">3. Truss Navigation Arches</h3>
+                        <p class="text-slate-300 leading-relaxed">Two white steel arches with a 227 m clear span allowing maritime vessel passage.</p>
+                    </div>
+                    <div class="bg-white/5 border-l-4 border-purple-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-purple-300 mb-1">4. Seismic &amp; Ice Resistance</h3>
+                        <p class="text-slate-300 leading-relaxed">Anti-seismic bearings and integrated icebreakers on main navigation piers.</p>
+                    </div>
+                    <div class="bg-white/5 border-l-4 border-rose-400 p-3 rounded-r-xl">
+                        <h3 class="font-semibold text-rose-300 mb-1">5. Modular Assembly</h3>
+                        <p class="text-slate-300 leading-relaxed">Spans pre-assembled onshore and lifted into place via hydraulic strand jacks.</p>
+                    </div>
+                `;
+            }
+
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                const label = btn.getAttribute(`data-${currentLang}`);
+                if (label) btn.textContent = label;
+            });
+
+            const btnExitFpv = document.getElementById('btn-exit-fpv');
+            if (btnExitFpv) btnExitFpv.textContent = currentLang === 'fr' ? 'QUITTER FPV' : 'EXIT FPV';
+        }
+
+        function triggerSlavaUkraini() {
+            if (destructionState.triggered) return;
+            destructionState.triggered = true;
+            destructionState.phase = 'incoming';
+            destructionState.timer = 0;
+
+            const btnSlava = document.getElementById('btn-slava');
+            const btnReset = document.getElementById('btn-reset');
+            if (btnSlava) btnSlava.classList.add('hidden');
+            if (btnReset) btnReset.classList.remove('hidden');
+
+            const dot = document.getElementById('status-dot');
+            if (dot) {
+                dot.classList.remove('bg-emerald-400');
+                dot.classList.add('bg-rose-500');
+            }
+            
+            const tLang = i18n[currentLang];
+            const statusEl = document.getElementById('status-text');
+            if (statusEl) statusEl.textContent = tLang.statusAlert;
+
+            cameraTransition.active = true;
+            cameraTransition.progress = 0;
+            cameraTransition.startPos.copy(camera.position);
+            cameraTransition.endPos.set(95, 52, 118);
+            cameraTransition.startTarget.copy(controls.target);
+            cameraTransition.endTarget.set(0, 16, 0);
+
+            const targets = [
+                new THREE.Vector3(-14, 23, ROAD_Z),
+                new THREE.Vector3(14, 23, RAIL_Z),
+                new THREE.Vector3(0, 26, 0),
+                new THREE.Vector3(-22, 23, RAIL_Z),
+                new THREE.Vector3(22, 23, ROAD_Z),
+                new THREE.Vector3(0, 4, cargoShip ? cargoShip.position.z : 10)
+            ];
+
+            targets.forEach((targetPos, idx) => {
+                const startPos = new THREE.Vector3(
+                    (idx % 2 === 0 ? -160 : 160) + (Math.random() - 0.5) * 40,
+                    95 + idx * 14,
+                    -150 - idx * 25
+                );
+
+                const missileGroup = new THREE.Group();
+                const body = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.28, 0.38, 3.6, 8),
+                    new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7 })
+                );
+                body.rotation.x = Math.PI / 2;
+                missileGroup.add(body);
+
+                const warhead = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.28, 0.9, 8),
+                    new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+                );
+                warhead.rotation.x = Math.PI / 2;
+                warhead.position.z = 2.2;
+                missileGroup.add(warhead);
+
+                const flame = new THREE.Mesh(
+                    new THREE.ConeGeometry(0.35, 2.2, 8),
+                    new THREE.MeshBasicMaterial({ color: 0xf97316 })
+                );
+                flame.rotation.x = -Math.PI / 2;
+                flame.position.z = -2.6;
+                missileGroup.add(flame);
+
+                missileGroup.position.copy(startPos);
+                missileGroup.lookAt(targetPos);
+                scene.add(missileGroup);
+
+                destructionState.missiles.push({
+                    mesh: missileGroup,
+                    start: startPos,
+                    target: targetPos,
+                    progress: -idx * 0.12,
+                    speed: 0.85,
+                    isShipTarget: idx === 5,
+                    detonated: false
+                });
+            });
+        }
+
+        function spawnExplosion(pos, scale = 1.0) {
+            destructionState.shakeIntensity = Math.min(2.8, destructionState.shakeIntensity + 1.1 * scale);
+
+            const expLight = new THREE.PointLight(0xff7b00, 18 * scale, 130 * scale);
+            expLight.position.copy(pos).add(new THREE.Vector3(0, 3, 0));
+            scene.add(expLight);
+            destructionState.explosionLights.push({ light: expLight, life: 1.0 });
+
+            const shockGeo = new THREE.RingGeometry(0.5, 2.5 * scale, 24);
+            shockGeo.rotateX(-Math.PI / 2);
+            const shockMat = new THREE.MeshBasicMaterial({
+                color: 0xffedd5,
+                transparent: true,
+                opacity: 0.9,
+                side: THREE.DoubleSide
+            });
+            const shockMesh = new THREE.Mesh(shockGeo, shockMat);
+            shockMesh.position.copy(pos).add(new THREE.Vector3(0, 1, 0));
+            scene.add(shockMesh);
+            destructionState.shockwaves.push({ mesh: shockMesh, scale: 1, maxScale: 16 * scale, life: 1.0 });
+
+            const count = Math.floor(38 * scale);
+            for (let i = 0; i < count; i++) {
+                const isFire = i < count * 0.45;
+                const pGeo = new THREE.DodecahedronGeometry((isFire ? 1.1 : 1.6) * scale * (0.6 + Math.random() * 0.8), 0);
+                const pMat = new THREE.MeshBasicMaterial({
+                    color: isFire ? (Math.random() > 0.4 ? 0xf97316 : 0xfacc15) : 0x1e293b,
+                    transparent: true,
+                    opacity: isFire ? 0.95 : 0.85
+                });
+                const pMesh = new THREE.Mesh(pGeo, pMat);
+                pMesh.position.copy(pos).add(new THREE.Vector3(
+                    (Math.random() - 0.5) * 4,
+                    (Math.random() - 0.5) * 3,
+                    (Math.random() - 0.5) * 4
+                ));
+                scene.add(pMesh);
+
+                destructionState.explosionParticles.push({
+                    mesh: pMesh,
+                    vel: new THREE.Vector3(
+                        (Math.random() - 0.5) * 24 * scale,
+                        (Math.random() * 18 + 6) * scale,
+                        (Math.random() - 0.5) * 24 * scale
+                    ),
+                    isFire: isFire,
+                    life: 1.0,
+                    decay: isFire ? (1.1 + Math.random() * 0.6) : (0.35 + Math.random() * 0.25)
+                });
+            }
+
+            const debrisCount = Math.floor(18 * scale);
+            for (let d = 0; d < debrisCount; d++) {
+                const isSteel = d % 2 === 0;
+                const dGeo = isSteel
+                    ? new THREE.BoxGeometry(0.4 + Math.random() * 0.6, 0.4, 2.5 + Math.random() * 3.5)
+                    : new THREE.BoxGeometry(1.4 + Math.random() * 2.2, 0.7, 1.4 + Math.random() * 2.2);
+                const dMat = new THREE.MeshStandardMaterial({
+                    color: isSteel ? 0xf8fafc : 0x64748b,
+                    roughness: 0.8
+                });
+                const dMesh = new THREE.Mesh(dGeo, dMat);
+                dMesh.position.copy(pos);
+                dMesh.castShadow = true;
+                scene.add(dMesh);
+
+                destructionState.debris.push({
+                    mesh: dMesh,
+                    vel: new THREE.Vector3(
+                        (Math.random() - 0.5) * 28,
+                        8 + Math.random() * 18,
+                        (Math.random() - 0.5) * 28
+                    ),
+                    rotVel: new THREE.Vector3(
+                        (Math.random() - 0.5) * 6,
+                        (Math.random() - 0.5) * 6,
+                        (Math.random() - 0.5) * 6
+                    ),
+                    floating: false,
+                    buoyancyOffset: (Math.random() - 0.5) * 0.3
+                });
+            }
+        }
+
+        function spawnWaterSplash(x, z, scale = 1.0) {
+            const ringGeo = new THREE.RingGeometry(0.8, 2.2 * scale, 24);
+            ringGeo.rotateX(-Math.PI / 2);
+            const ringMat = new THREE.MeshBasicMaterial({
+                color: 0xe0f2fe,
+                transparent: true,
+                opacity: 0.85,
+                side: THREE.DoubleSide
+            });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.position.set(x, 0.35, z);
+            scene.add(ring);
+
+            const droplets = [];
+            const dropCount = Math.floor(14 * scale);
+            for (let i = 0; i < dropCount; i++) {
+                const drop = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.7 * scale, 1.4 * scale, 0.7 * scale),
+                    new THREE.MeshBasicMaterial({ color: 0xf0f9ff, transparent: true, opacity: 0.85 })
+                );
+                drop.position.set(x + (Math.random() - 0.5) * 3, 0.5, z + (Math.random() - 0.5) * 3);
+                scene.add(drop);
+                droplets.push({
+                    mesh: drop,
+                    vel: new THREE.Vector3(
+                        (Math.random() - 0.5) * 12 * scale,
+                        (8 + Math.random() * 14) * scale,
+                        (Math.random() - 0.5) * 12 * scale
+                    )
+                });
+            }
+
+            destructionState.waterSplashes.push({
+                ring: ring,
+                droplets: droplets,
+                life: 1.0,
+                maxScale: 12 * scale
+            });
+        }
+
+        function resetSimulation() {
+            window.location.reload();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const dt = Math.min(clock.getDelta(), 0.05);
+            const elapsedTime = clock.getElapsedTime();
+            const halfBridge = BRIDGE_LENGTH / 2;
+            const halfSpan = ARCH_SPAN / 2;
+
+            if (waterGeometry && waterInitialPositions) {
+                const posAttr = waterGeometry.attributes.position;
+                const arr = posAttr.array;
+                for (let i = 0; i < arr.length; i += 3) {
+                    const x = waterInitialPositions[i];
+                    const z = waterInitialPositions[i + 2];
+                    arr[i + 1] = Math.sin(x * 0.04 + elapsedTime * 1.4) * 0.35 +
+                                 Math.cos(z * 0.05 + elapsedTime * 1.1) * 0.3;
+                }
+                posAttr.needsUpdate = true;
+            }
+
+            if (rainSystem && rainSystem.visible) {
+                const positions = rainSystem.geometry.attributes.position.array;
+                for (let i = 1; i < positions.length; i += 3) {
+                    positions[i] -= 45 * dt;
+                    if (positions[i] < 0) positions[i] = 180;
+                }
+                rainSystem.geometry.attributes.position.needsUpdate = true;
+
+                if (Math.random() < 0.015) {
+                    lightningLight.intensity = 15 + Math.random() * 30;
+                    setTimeout(() => { lightningLight.intensity = 0; }, 80);
+                }
+            }
+
+            if (firedMissile && firedMissile.stage === 'flying') {
+                const prevPos = firedMissile.mesh.position.clone();
+                firedMissile.mesh.position.addScaledVector(firedMissile.velocity, dt);
+                firedMissile.timer += dt;
+
+                // La caméra suit le missile juste derrière son sillage en regardant dans sa direction de vol
+                const camOffset = firedMissile.direction.clone().multiplyScalar(-6.5).add(new THREE.Vector3(0, 1.4, 0));
+                camera.position.copy(firedMissile.mesh.position).add(camOffset);
+                camera.lookAt(firedMissile.mesh.position.clone().addScaledVector(firedMissile.direction, 30));
+
+                const mPos = firedMissile.mesh.position;
+                const absX = Math.abs(mPos.x);
+
+                // Détection précise et élargie d'impact sur le tablier du pont (route ou rail) et le navire
+                const deckY = getDeckY(mPos.x);
+                const crossedDeckY = (prevPos.y >= deckY && mPos.y <= deckY) || Math.abs(mPos.y - deckY) <= 5.5;
+                const hitBridgeDeck = (absX <= halfBridge && Math.abs(mPos.z) <= 16.0 && crossedDeckY);
+                const hitShip = cargoShip && (mPos.distanceTo(cargoShip.position.clone().add(new THREE.Vector3(0, 4, 0))) < 16);
+
+                if (hitShip) {
+                    destructionState.shipHits += 1;
+                    destructionState.residualSmokeSources.push({
+                        pos: mPos.clone(),
+                        followShip: true
+                    });
+                    spawnExplosion(mPos, 1.5);
+                    scene.remove(firedMissile.mesh);
+                    firedMissile = null;
+                    if (activeDrone && activeDrone.missilesRemaining <= 0) {
+                        exitFPVMode();
+                    } else {
+                        const fpvOverlay = document.getElementById('fpv-overlay');
+                        if (fpvOverlay && activeDrone) fpvOverlay.style.display = 'block';
+                    }
+                } else if (hitBridgeDeck) {
+                    if (absX <= halfSpan + 12) {
+                        if (mPos.x <= 0) {
+                            if (mPos.z <= 0) destructionState.leftRoadDestroyed = true;
+                            else destructionState.leftRailDestroyed = true;
+                        } else {
+                            if (mPos.z <= 0) destructionState.rightRoadDestroyed = true;
+                            else destructionState.rightRailDestroyed = true;
+                        }
+                        destructionState.residualSmokeSources.push({
+                            pos: new THREE.Vector3(mPos.x, 22.5, mPos.z <= 0 ? ROAD_Z : RAIL_Z),
+                            followShip: false
+                        });
+                    }
+                    spawnExplosion(mPos, 1.6);
+                    spawnWaterSplash(mPos.x, mPos.z, 1.6);
+                    scene.remove(firedMissile.mesh);
+                    firedMissile = null;
+                    if (activeDrone && activeDrone.missilesRemaining <= 0) {
+                        exitFPVMode();
+                    } else {
+                        const fpvOverlay = document.getElementById('fpv-overlay');
+                        if (fpvOverlay && activeDrone) fpvOverlay.style.display = 'block';
+                    }
+                } else if (mPos.y <= WATER_LEVEL || absX > halfBridge + 120 || firedMissile.timer > 8.0) {
+                    spawnWaterSplash(mPos.x, mPos.z, 1.2);
+                    spawnExplosion(mPos, 1.0);
+                    scene.remove(firedMissile.mesh);
+                    firedMissile = null;
+                    if (activeDrone && activeDrone.missilesRemaining <= 0) {
+                        exitFPVMode();
+                    } else {
+                        const fpvOverlay = document.getElementById('fpv-overlay');
+                        if (fpvOverlay && activeDrone) fpvOverlay.style.display = 'block';
+                    }
+                }
+            } else if (activeDrone) {
+                // Trajectoire orbitale distincte pour chacun des 3 drones
+                activeDrone.orbitAngle += activeDrone.orbitSpeed * dt;
+                let droneX = 0;
+                let droneY = 20;
+                let droneZ = 0;
+
+                if (activeDrone.index === 1) {
+                    // Drone 1 : Orbite rapprochée avec alternance rase-mottes / survol des arches
+                    droneX = Math.cos(activeDrone.orbitAngle) * 110;
+                    droneZ = Math.sin(activeDrone.orbitAngle) * 80;
+                    const altitudeWave = (Math.sin(activeDrone.orbitAngle * 2.0) + 1) * 0.5;
+                    droneY = 3.5 + altitudeWave * 52.0;
+                } else if (activeDrone.index === 2) {
+                    // Drone 2 : Grande orbite éloignée en haute altitude pour tirs longue portée
+                    droneX = Math.cos(activeDrone.orbitAngle * 0.85) * 215;
+                    droneZ = Math.sin(activeDrone.orbitAngle * 0.85) * 165;
+                    const altitudeWave = (Math.cos(activeDrone.orbitAngle * 1.5) + 1) * 0.5;
+                    droneY = 38.0 + altitudeWave * 58.0;
+                } else {
+                    // Drone 3 : Orbite circulaire en haute altitude au-dessus du pont avec caméra plongeante vers le bas
+                    droneX = Math.cos(activeDrone.orbitAngle * 1.15) * 95;
+                    droneZ = Math.sin(activeDrone.orbitAngle * 1.15) * 95;
+                    droneY = 85.0 + Math.sin(activeDrone.orbitAngle * 2.0) * 10.0;
+                }
+
+                activeDrone.position.set(droneX, droneY, droneZ);
+                activeDrone.mesh.position.copy(activeDrone.position);
+
+                // Orientation de base vers le centre du pont (caméra plongeante pour le Drone 3)
+                const bridgeCenter = new THREE.Vector3(0, activeDrone.index === 3 ? 12 : 20, 0);
+                const toCenter = bridgeCenter.clone().sub(activeDrone.position).normalize();
+                const baseYaw = Math.atan2(-toCenter.x, -toCenter.z);
+                const basePitch = Math.asin(THREE.MathUtils.clamp(toCenter.y, -0.95, 0.95));
+
+                const targetYawOffset = -mousePos.x * 1.15;
+                const targetPitchOffset = mousePos.y * 0.75;
+                activeDrone.aimYaw = THREE.MathUtils.lerp(activeDrone.aimYaw, targetYawOffset, 8 * dt);
+                activeDrone.aimPitch = THREE.MathUtils.lerp(activeDrone.aimPitch, targetPitchOffset, 8 * dt);
+
+                const finalEuler = new THREE.Euler(
+                    THREE.MathUtils.clamp(basePitch + activeDrone.aimPitch, -1.48, 1.35),
+                    baseYaw + activeDrone.aimYaw,
+                    0,
+                    'YXZ'
+                );
+                const lookDir = new THREE.Vector3(0, 0, -1).applyEuler(finalEuler);
+
+                camera.position.copy(activeDrone.position);
+                camera.lookAt(camera.position.clone().addScaledVector(lookDir, 60));
+
+                const altEl = document.getElementById('fpv-alt');
+                if (altEl) altEl.textContent = Math.round(droneY);
+            }
+
+            if (destructionState.triggered) {
+                destructionState.timer += dt;
+
+                if (destructionState.timer >= 10.0 && !destructionState.jetSpawned) {
+                    spawnUkrainianJet();
+                }
+
+                if (ukrainianJet) {
+                    ukrainianJet.position.x += 45 * dt;
+                    ukrainianJet.position.y = 65 + Math.sin(elapsedTime * 2) * 2;
+                    ukrainianJet.position.z = Math.sin(elapsedTime * 0.8) * 15;
+                    ukrainianJet.rotation.y = 0;
+
+                    if (ukrainianJet.position.x > 300) {
+                        scene.remove(ukrainianJet);
+                        ukrainianJet = null;
+                    }
+                }
+
+                destructionState.missiles.forEach(m => {
+                    if (m.detonated) return;
+                    m.progress += dt * m.speed;
+                    if (m.progress < 0) {
+                        m.mesh.visible = false;
+                        return;
+                    }
+                    m.mesh.visible = true;
+
+                    if (m.isShipTarget && cargoShip) {
+                        m.target.set(cargoShip.position.x, 4, cargoShip.position.z);
+                    }
+
+                    if (m.progress >= 1) {
+                        m.detonated = true;
+                        m.mesh.visible = false;
+                        spawnExplosion(m.target, m.isShipTarget ? 1.5 : 1.25);
+
+                        if (m.isShipTarget) {
+                            destructionState.shipHits = Math.max(2, destructionState.shipHits);
+                            destructionState.residualSmokeSources.push({
+                                pos: m.target.clone(),
+                                followShip: true
+                            });
+                        } else if (destructionState.phase === 'incoming') {
+                            destructionState.phase = 'exploding';
+                            destructionState.leftRoadDestroyed = true;
+                            destructionState.leftRailDestroyed = true;
+                            destructionState.rightRoadDestroyed = true;
+                            destructionState.rightRailDestroyed = true;
+                            const tLang = i18n[currentLang];
+                            const statusEl = document.getElementById('status-text');
+                            if (statusEl) statusEl.textContent = tLang.statusImpact;
+
+                            destructionState.residualSmokeSources.push(
+                                { pos: new THREE.Vector3(-halfSpan, 22.5, ROAD_Z), followShip: false },
+                                { pos: new THREE.Vector3(halfSpan, 22.5, RAIL_Z), followShip: false }
+                            );
+                        }
+                    } else {
+                        m.mesh.position.lerpVectors(m.start, m.target, m.progress);
+                        m.mesh.position.y += Math.sin(m.progress * Math.PI) * 14;
+                        m.mesh.lookAt(m.target);
+                    }
+                });
+            }
+
+            // Basculement indépendant des tabliers centraux dès qu'ils sont touchés par un missile FPV ou une frappe
+            if (destructionState.leftRoadDestroyed && leftRoadDeckGroup && leftRoadDeckGroup.rotation.z > -Math.PI / 2.15) {
+                leftRoadDeckGroup.rotation.z -= 1.35 * dt;
+                if (!destructionState.leftRoadSplashed) {
+                    destructionState.leftRoadSplashed = true;
+                    spawnWaterSplash(-24, ROAD_Z, 1.5);
+                }
+            }
+            if (destructionState.leftRailDestroyed && leftRailDeckGroup && leftRailDeckGroup.rotation.z > -Math.PI / 2.15) {
+                leftRailDeckGroup.rotation.z -= 1.35 * dt;
+                if (!destructionState.leftRailSplashed) {
+                    destructionState.leftRailSplashed = true;
+                    spawnWaterSplash(-24, RAIL_Z, 1.5);
+                }
+            }
+            if (destructionState.rightRoadDestroyed && rightRoadDeckGroup && rightRoadDeckGroup.rotation.z < Math.PI / 2.15) {
+                rightRoadDeckGroup.rotation.z += 1.35 * dt;
+                if (!destructionState.rightRoadSplashed) {
+                    destructionState.rightRoadSplashed = true;
+                    spawnWaterSplash(24, ROAD_Z, 1.5);
+                }
+            }
+            if (destructionState.rightRailDestroyed && rightRailDeckGroup && rightRailDeckGroup.rotation.z < Math.PI / 2.15) {
+                rightRailDeckGroup.rotation.z += 1.35 * dt;
+                if (!destructionState.rightRailSplashed) {
+                    destructionState.rightRailSplashed = true;
+                    spawnWaterSplash(24, RAIL_Z, 1.5);
+                }
+            }
+
+            if (destructionState.leftRoadDestroyed && destructionState.leftRailDestroyed && destructionState.rightRoadDestroyed && destructionState.rightRailDestroyed) {
+                if (centralArchesGroup && centralArchesGroup.position.y > -24) {
+                    centralArchesGroup.position.y -= 13.5 * dt;
+                    centralArchesGroup.rotation.z += 0.14 * dt;
+                    if (!destructionState.archSplashed && centralArchesGroup.position.y <= 2) {
+                        destructionState.archSplashed = true;
+                        spawnWaterSplash(0, 0, 2.4);
+                    }
+                }
+            }
+
+            if ((destructionState.triggered || destructionState.residualSmokeSources.length > 0) && Math.random() < 0.65) {
+                destructionState.residualSmokeSources.forEach(src => {
+                    const origin = src.followShip && cargoShip
+                        ? new THREE.Vector3(cargoShip.position.x, Math.max(0.5, cargoShip.position.y + 3), cargoShip.position.z)
+                        : src.pos;
+
+                    if (src.followShip && cargoShip && cargoShip.position.y < -14) return;
+
+                    const smokeMesh = new THREE.Mesh(
+                        new THREE.DodecahedronGeometry(1.4 + Math.random() * 1.4, 0),
+                        new THREE.MeshBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.72 })
+                    );
+                    smokeMesh.position.copy(origin).add(new THREE.Vector3(
+                        (Math.random() - 0.5) * 3,
+                        Math.random() * 1.5,
+                        (Math.random() - 0.5) * 3
+                    ));
+                    scene.add(smokeMesh);
+
+                    destructionState.explosionParticles.push({
+                        mesh: smokeMesh,
+                        vel: new THREE.Vector3(1.8 + Math.random() * 2, 5 + Math.random() * 4, (Math.random() - 0.5) * 2),
+                        isFire: false,
+                        life: 1.0,
+                        decay: 0.24
+                    });
+                });
+            }
+
+            for (let i = destructionState.explosionParticles.length - 1; i >= 0; i--) {
+                const p = destructionState.explosionParticles[i];
+                p.life -= p.decay * dt;
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    p.mesh.geometry.dispose();
+                    p.mesh.material.dispose();
+                    destructionState.explosionParticles.splice(i, 1);
+                    continue;
+                }
+                p.mesh.position.addScaledVector(p.vel, dt);
+                if (p.isFire) {
+                    p.vel.y -= 9.8 * dt;
+                } else {
+                    p.mesh.scale.addScalar(0.85 * dt);
+                }
+                p.mesh.material.opacity = Math.max(0, p.life * (p.isFire ? 0.95 : 0.75));
+            }
+
+            for (let i = destructionState.explosionLights.length - 1; i >= 0; i--) {
+                const el = destructionState.explosionLights[i];
+                el.life -= 2.2 * dt;
+                if (el.life <= 0) {
+                    scene.remove(el.light);
+                    destructionState.explosionLights.splice(i, 1);
+                } else {
+                    el.light.intensity = el.life * 22;
+                }
+            }
+
+            for (let i = destructionState.shockwaves.length - 1; i >= 0; i--) {
+                const sw = destructionState.shockwaves[i];
+                sw.life -= 1.8 * dt;
+                if (sw.life <= 0) {
+                    scene.remove(sw.mesh);
+                    sw.mesh.geometry.dispose();
+                    sw.mesh.material.dispose();
+                    destructionState.shockwaves.splice(i, 1);
+                } else {
+                    const s = 1 + (1 - sw.life) * sw.maxScale;
+                    sw.mesh.scale.set(s, s, 1);
+                    sw.mesh.material.opacity = sw.life * 0.85;
+                }
+            }
+
+            destructionState.debris.forEach(d => {
+                if (!d.floating) {
+                    d.vel.y -= 19.6 * dt;
+                    d.mesh.position.addScaledVector(d.vel, dt);
+                    d.mesh.rotation.x += d.rotVel.x * dt;
+                    d.mesh.rotation.y += d.rotVel.y * dt;
+                    d.mesh.rotation.z += d.rotVel.z * dt;
+
+                    if (d.mesh.position.y <= WATER_LEVEL + 0.1) {
+                        d.floating = true;
+                        d.mesh.position.y = WATER_LEVEL + d.buoyancyOffset;
+                        spawnWaterSplash(d.mesh.position.x, d.mesh.position.z, 0.55);
+                    }
+                } else {
+                    d.mesh.position.y = WATER_LEVEL + d.buoyancyOffset + Math.sin(elapsedTime * 2 + d.mesh.position.x * 0.2) * 0.22;
+                    d.mesh.position.x += 0.35 * dt;
+                    d.mesh.rotation.z = Math.sin(elapsedTime * 1.5 + d.mesh.position.z) * 0.15;
+                }
+            });
+
+            for (let i = destructionState.waterSplashes.length - 1; i >= 0; i--) {
+                const sp = destructionState.waterSplashes[i];
+                sp.life -= 1.1 * dt;
+                if (sp.life <= 0) {
+                    scene.remove(sp.ring);
+                    sp.ring.geometry.dispose();
+                    sp.ring.material.dispose();
+                    sp.droplets.forEach(dr => {
+                        scene.remove(dr.mesh);
+                        dr.mesh.geometry.dispose();
+                        dr.mesh.material.dispose();
+                    });
+                    destructionState.waterSplashes.splice(i, 1);
+                    continue;
+                }
+                const s = 1 + (1 - sp.life) * sp.maxScale;
+                sp.ring.scale.set(s, s, 1);
+                sp.ring.material.opacity = sp.life * 0.8;
+
+                sp.droplets.forEach(dr => {
+                    dr.vel.y -= 24 * dt;
+                    dr.mesh.position.addScaledVector(dr.vel, dt);
+                    dr.mesh.material.opacity = sp.life * 0.85;
+                });
+            }
+
+            const bridgeBroken = (destructionState.leftRoadDestroyed && destructionState.leftRailDestroyed && destructionState.rightRoadDestroyed && destructionState.rightRailDestroyed);
+            cars.forEach(car => {
+                if (car.isFalling) {
+                    if (!car.inWater) {
+                        car.fallVelocity.y -= 19.6 * dt;
+                        car.mesh.position.addScaledVector(car.fallVelocity, dt);
+                        car.mesh.rotation.x += car.fallRotation.x * dt;
+                        car.mesh.rotation.z += car.fallRotation.z * dt;
+
+                        if (car.mesh.position.y <= WATER_LEVEL) {
+                            car.inWater = true;
+                            spawnWaterSplash(car.mesh.position.x, car.mesh.position.z, 0.75);
+                        }
+                    } else if (car.mesh.position.y > -12) {
+                        car.mesh.position.y -= 2.2 * dt;
+                        car.mesh.rotation.z += 0.25 * dt;
+                    }
+                    return;
+                }
+
+                car.mesh.position.x += car.dir * car.speed * 60 * dt;
+
+                const absCarX = Math.abs(car.mesh.position.x);
+                const isLeftBroken = (destructionState.leftRoadDestroyed || destructionState.leftRailDestroyed) && car.mesh.position.x < 0 && absCarX < halfSpan;
+                const isRightBroken = (destructionState.rightRoadDestroyed || destructionState.rightRailDestroyed) && car.mesh.position.x > 0 && absCarX < halfSpan;
+
+                if (isLeftBroken || isRightBroken) {
+                    car.isFalling = true;
+                    car.fallVelocity.set(car.dir * car.speed * 42, -2, (Math.random() - 0.5) * 4);
+                    car.fallRotation.set((Math.random() - 0.5) * 3, 0, -car.dir * 2.5);
+                } else {
+                    if (car.mesh.position.x > halfBridge) car.mesh.position.x = -halfBridge;
+                    if (car.mesh.position.x < -halfBridge) car.mesh.position.x = halfBridge;
+                    car.mesh.position.y = getDeckY(car.mesh.position.x) + 0.22;
+                }
+            });
+
+            trains.forEach(train => {
+                train.headX += train.speed * 60 * dt;
+                if (!bridgeBroken) {
+                    if (train.headX > halfBridge + 70) train.headX = -halfBridge - 70;
+                    if (train.headX < -halfBridge - 70) train.headX = halfBridge + 70;
+                }
+
+                train.cars.forEach(wagon => {
+                    if (wagon.isFalling) {
+                        if (!wagon.inWater) {
+                            wagon.fallVel -= 19.6 * dt;
+                            wagon.mesh.position.y += wagon.fallVel * dt;
+                            wagon.mesh.position.x += wagon.forwardVel * dt;
+                            wagon.mesh.rotation.z -= Math.sign(train.speed) * 1.4 * dt;
+
+                            if (wagon.mesh.position.y <= WATER_LEVEL) {
+                                wagon.inWater = true;
+                                spawnWaterSplash(wagon.mesh.position.x, wagon.mesh.position.z, 1.1);
+                            }
+                        } else if (wagon.mesh.position.y > -14) {
+                            wagon.mesh.position.y -= 2.5 * dt;
+                        }
+                        return;
+                    }
+
+                    const wx = train.headX + wagon.offset;
+                    if (Math.abs(wx) < halfSpan - 2 && ((wx < 0 && destructionState.leftRailDestroyed) || (wx > 0 && destructionState.rightRailDestroyed))) {
+                        wagon.isFalling = true;
+                        wagon.fallVel = -2;
+                        wagon.forwardVel = train.speed * 45;
+                    } else {
+                        wagon.mesh.position.set(wx, getDeckY(wx) + 1.15, train.z);
+                    }
+                });
+            });
+
+            if (cargoShip) {
+                if (destructionState.shipHits === 0) {
+                    cargoShip.position.z -= 6.5 * dt;
+                    if (cargoShip.position.z < -260) {
+                        cargoShip.position.z = 260;
+                    }
+                    cargoShip.position.y = Math.sin(elapsedTime * 1.6) * 0.25;
+                    cargoShip.rotation.z = Math.cos(elapsedTime * 1.2) * 0.025;
+                } else if (destructionState.shipHits === 1) {
+                    cargoShip.position.y = -0.5;
+                    cargoShip.rotation.z = 0.15;
+                } else if (destructionState.shipHits >= 2) {
+                    cargoShip.position.y -= 1.65 * dt;
+                    cargoShip.rotation.x += 0.035 * dt * destructionState.shipTiltAxis.x;
+                    cargoShip.rotation.z += 0.035 * dt * destructionState.shipTiltAxis.z;
+                }
+            }
+
+            if (cameraTransition.active) {
+                cameraTransition.progress += dt * 1.2;
+                const t = Math.min(1, cameraTransition.progress);
+                const ease = 1 - Math.pow(1 - t, 3);
+                camera.position.lerpVectors(cameraTransition.startPos, cameraTransition.endPos, ease);
+                controls.target.lerpVectors(cameraTransition.startTarget, cameraTransition.endTarget, ease);
+                if (t >= 1) cameraTransition.active = false;
+            }
+
+            if (destructionState.shakeIntensity > 0.01) {
+                camera.position.x += (Math.random() - 0.5) * destructionState.shakeIntensity;
+                camera.position.y += (Math.random() - 0.5) * destructionState.shakeIntensity;
+                destructionState.shakeIntensity *= Math.pow(0.08, dt);
+            }
+
+            if (!activeDrone && !firedMissile && controls && controls.enabled) {
+                controls.update();
+            }
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
